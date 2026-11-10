@@ -376,6 +376,10 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             tabsView.setViewVisible(view, true, false);
         }
         checkUi_callTabVisible(getUserConfig().showCallsTab, false);
+        // fork: на узкой панели вместо всех вкладок — активная + меню (только планшетный режим)
+        if (AndroidUtilities.isTablet()) {
+            tabsView.setCompactListener(this::openCompactTabsMenu);
+        }
 
         selectTab(viewPager.getCurrentPosition(), false);
 
@@ -901,6 +905,39 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
             GlassTabView tab = tabs[a];
             tab.setSelected(indexToPosition(a) == position, animated);
         }
+        if (tabsView != null) {
+            tabsView.onTabSelectionChanged();
+        }
+    }
+
+    // fork: меню вкладок для компакт-режима; пункт = нажатие на саму вкладку (та же логика selectTab/scrollToPosition)
+    private static final int[] COMPACT_MENU_ICONS = {
+        R.drawable.msg_discussion, R.drawable.msg_contacts, R.drawable.msg_settings, R.drawable.msg_calls, R.drawable.msg_openprofile
+    };
+    private static final int[] COMPACT_MENU_TITLES = {
+        R.string.MainTabsChats, R.string.MainTabsContacts, R.string.Settings, R.string.MainTabsCalls, R.string.MainTabsProfile
+    };
+
+    private void openCompactTabsMenu() {
+        if (getContext() == null || getParentActivity() == null || tabsView == null || viewPager == null) return;
+        final int current = viewPager.getCurrentPosition();
+        final ItemOptions o = ItemOptions.makeOptions(this, tabsView);
+        for (int index = 0; index < tabs.length; index++) {
+            if (!tabsView.isViewVisible(tabs[index])) continue;
+            final GlassTabView tab = tabs[index];
+            final Runnable onClick = () -> {
+                // нажатие на вкладку: та же ветка, что и в широком режиме (повторный тап — прокрутка вверх)
+                tab.performClick();
+            };
+            if (indexToPosition(index) == current) {
+                o.add(COMPACT_MENU_ICONS[index], getString(COMPACT_MENU_TITLES[index]), Theme.key_featuredStickers_addButton, Theme.key_featuredStickers_addButton, onClick);
+            } else {
+                o.add(COMPACT_MENU_ICONS[index], getString(COMPACT_MENU_TITLES[index]), onClick);
+            }
+        }
+        o.setMaxHeight(dp(400));
+        o.setGravity(Gravity.LEFT);
+        o.show();
     }
 
     public void setGestureSelectedOverride(float animatedPosition, boolean allow) {

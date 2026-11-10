@@ -661,6 +661,8 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private LayerDrawable gramTransferDrawable;
     private int gramTransferColor;
     private boolean drawCount2 = true;
+    /** fork: список чатов сужен до одних аватарок — рисуем только аватарку и счётчик */
+    private boolean railMode;
     private int countTop;
     private int countLeft;
     private int countWidth;
@@ -1314,12 +1316,17 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
     private static final float BADGE_DRAWABLE_OFFSET = (BADGE_SIZE - BADGE_DRAWABLE_SIZE) / 2f;
 
     public void buildLayout() {
+        // fork: «только аватарка + счётчик» — лишь когда тексту физически не остаётся места
+        // (аватарка 72dp + отступы; превью ужимается до минимума dp(12) около 112dp). Шире — обычная раскладка с ellipsize.
+        final boolean railModeNow = isDialogCell && AndroidUtilities.isTablet() && getMeasuredWidth() > 0 && getMeasuredWidth() < dp(112);
+        final boolean railModeChanged = railModeNow != railMode;
+        railMode = railModeNow;
         if (isTransitionSupport) {
             return;
         }
         if (isDialogCell) {
             boolean needUpdate = updateHelper.update();
-            if (!needUpdate && currentDialogFolderId == 0 && currentDialogCommunityId == 0 && encryptedChat == null) {
+            if (!needUpdate && !railModeChanged && currentDialogFolderId == 0 && currentDialogCommunityId == 0 && encryptedChat == null) {
                 return;
             }
         }
@@ -2360,6 +2367,14 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             timeLayout = null;
             timeLeft = 0;
         }
+        // fork: узкая левая панель (разделитель стянут) — время уступает место имени,
+        // чтобы имя усекалось многоточием плавно, а не пропадало целиком; галочки остаются у правого края
+        if (timeLayout != null && isDialogCell && AndroidUtilities.isTablet() && getMeasuredWidth() > 0
+                && getMeasuredWidth() - nameLeft - dp(22) - timeWidth < dp(48)) {
+            timeWidth = 0;
+            timeLayout = null;
+            timeLeft = LocaleController.isRTL ? dp(15) : getMeasuredWidth() - dp(15);
+        }
 
         int timeLeftOffset = 0;
         if (drawLock2()) {
@@ -2465,6 +2480,10 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             if (LocaleController.isRTL) {
                 nameLeft += namePaddingEnd;
             }
+        }
+        // fork: при сильно стянутой панели ширина имени не должна уходить в минус (позиции значков считаются от неё)
+        if (nameWidth < 0) {
+            nameWidth = 0;
         }
         try {
             int ellipsizeWidth = nameWidth - dp(12);
@@ -3062,6 +3081,46 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             }
         }
         updateThumbsPosition();
+
+        // fork: narrow left pane in split view -> avatars only
+        if (railMode) {
+            // пустые layout вместо null: часть кода отрисовки не проверяет на null
+            nameLayout = emptyRailLayout(Theme.dialogs_namePaint[0]);
+            messageLayout = emptyRailLayout(Theme.dialogs_messagePaint[0]);
+            timeLayout = emptyRailLayout(Theme.dialogs_timePaint);
+            messageNameLayout = emptyRailLayout(Theme.dialogs_namePaint[0]);
+            typingLayout = emptyRailLayout(Theme.dialogs_messagePrintingPaint[0]);
+            thumbsCount = 0;
+            hasVideoThumb = false;
+            drawPinBackground = false;
+            // бейджи у имени (галочка, премиум-эмодзи, скам) в узкой панели не нужны:
+            // они рисуются не от layout, а отдельно и наползают на аватарку
+            drawVerified = false;
+            drawBotVerified = false;
+            drawPremium = false;
+            drawScam = 0;
+            drawError = false;
+            // fork: плашка темы форума («Имя: текст >») под аватаркой в узкой панели не нужна
+            buttonLayout = null;
+            int railSize = (int) storyParams.originalAvatarRect.width();
+            if (railSize > 0) {
+                int railLeft = (getMeasuredWidth() - railSize) / 2;
+                float railTop = storyParams.originalAvatarRect.top;
+                storyParams.originalAvatarRect.set(railLeft, railTop, railLeft + railSize, railTop + railSize);
+            }
+            // счётчик непрочитанных — в правом нижнем углу аватарки, слегка её перекрывая
+            if (countString != null && countWidth > 0) {
+                final float badgeWidth = countWidth + dp(BADGE_TEXT_PADDING * 2);
+                countLeft = (int) (storyParams.originalAvatarRect.right - badgeWidth + dp(4));
+                countTop = (int) (storyParams.originalAvatarRect.bottom - dp(BADGE_SIZE) + dp(2));
+                // fork: старая позиция для анимации смены числа — тоже у аватарки, а не справа в строке
+                countLeftOld = (int) (storyParams.originalAvatarRect.right - countWidthOld - dp(BADGE_TEXT_PADDING * 2) + dp(4));
+            }
+        }
+    }
+
+    private static StaticLayout emptyRailLayout(android.text.TextPaint paint) {
+        return new StaticLayout("", paint, 1, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0.0f, false);
     }
 
     public void setTitleOverride(String s) {
@@ -4250,7 +4309,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 }
             }
 
-            if (timeLayout != null && currentDialogFolderId == 0) {
+            if (timeLayout != null && currentDialogFolderId == 0 && !railMode) {
                 canvas.save();
                 canvas.translate(timeLeft, timeTop);
 
@@ -4390,7 +4449,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 }
                 canvas.restore();
 
-                if (typingLayout != null && (printingStringType >= 0 || (updateHelper.typingProgres > 0 && updateHelper.lastKnownTypingType >= 0))) {
+                if (!railMode && typingLayout != null && (printingStringType >= 0 || (updateHelper.typingProgres > 0 && updateHelper.lastKnownTypingType >= 0))) {
                     int type = printingStringType >= 0 ? printingStringType : updateHelper.lastKnownTypingType;
                     StatusDrawable statusDrawable = Theme.getChatStatusDrawable(type);
                     if (statusDrawable != null) {
@@ -4489,7 +4548,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 canvas.restore();
             }
 
-            if (currentDialogFolderId == 0) {
+            if (currentDialogFolderId == 0 && !railMode) {
                 int currentStatus = (drawClock ? 1 : 0) + (drawCheck1 ? 2 : 0) + (drawCheck2 ? 4 : 0);
                 if (lastStatusDrawableParams >= 0 && lastStatusDrawableParams != currentStatus && !statusDrawableAnimationInProgress) {
                     createStatusDrawableAnimator(lastStatusDrawableParams, currentStatus);
@@ -4535,7 +4594,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 }
             }
             boolean drawMuted = drawUnmute || dialogMuted || isHiddenInCommunity;
-            if (dialogsType != 2 && (drawMuted || dialogMutedProgress > 0) && !drawVerified && drawScam == 0) {
+            if (!railMode && dialogsType != 2 && (drawMuted || dialogMutedProgress > 0) && !drawVerified && drawScam == 0) {
                 if (drawMuted && dialogMutedProgress != 1f) {
                     dialogMutedProgress += 16 / 150f;
                     if (dialogMutedProgress > 1f) {
@@ -4657,8 +4716,11 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 Theme.dialogs_errorDrawable.draw(canvas);
             } else if ((drawCount || drawMention) && drawCount2 || countChangeProgress != 1f || drawReactionMention || reactionsMentionsChangeProgress != 1f || drawPollVotesMention || pollVotesMentionsVisibility > 0) {
                 final boolean drawCounterMuted = isCounterMuted();
-                drawCounter(canvas, drawCounterMuted, countTop, countLeft, countLeftOld, 1f, false);
-                if (drawMention) {
+                // fork: в railMode счётчик рисуется после аватарки (см. ниже), иначе она его перекрывает
+                if (!railMode) {
+                    drawCounter(canvas, drawCounterMuted, countTop, countLeft, countLeftOld, 1f, false);
+                }
+                if (drawMention && !railMode) {
                     Theme.dialogs_countPaint.setAlpha((int) ((1.0f - reorderIconProgress) * 255));
 
                     if (mentionLayout != null) {
@@ -4684,7 +4746,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                     }
                 }
 
-                if (drawReactionMention || reactionsMentionsChangeProgress != 1f) {
+                if (!railMode && (drawReactionMention || reactionsMentionsChangeProgress != 1f)) {
                     int x = reactionMentionLeft;
                     rect.set(x, countTop, x + dp(BADGE_SIZE), countTop + dp(BADGE_SIZE));
 
@@ -4703,7 +4765,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                         countTop + dp(BADGE_DRAWABLE_OFFSET + BADGE_DRAWABLE_SIZE / 2f), Gravity.CENTER);
                     DrawableUtils.drawWithScale(canvas, drawable, s);
                 }
-                if ((drawPollVotesMention || pollVotesMentionsVisibility > 0) && pollVotesMentionsVisibility != 0) {
+                if (!railMode && (drawPollVotesMention || pollVotesMentionsVisibility > 0) && pollVotesMentionsVisibility != 0) {
                     int x = pollVotesMentionLeft;
                     rect.set(x, countTop, x + dp(BADGE_SIZE), countTop + dp(BADGE_SIZE));
 
@@ -4818,7 +4880,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 }
             }
 
-            if (tags != null && !tags.isEmpty()) {
+            if (!railMode && tags != null && !tags.isEmpty()) {
                 canvas.save();
                 canvas.translate(tagsLeft, getMeasuredHeight() - dp(21.66f) - (useSeparator ? 1 : 0));
                 tags.draw(canvas, tagsRight - tagsLeft);
@@ -4868,7 +4930,7 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
                 storyParams.forceState = s;
             }
 
-            if (!insideCommunityList && (chat != null && chat.linked_community_id != 0 || user != null && user.linked_community_id != 0) && !drawCommunityAvatar && isDialogCell && !isDialogFolder()) {
+            if (!railMode && !insideCommunityList && (chat != null && chat.linked_community_id != 0 || user != null && user.linked_community_id != 0) && !drawCommunityAvatar && isDialogCell && !isDialogFolder()) {
                 final float ccx = storyParams.originalAvatarRect.centerX() + dp(20.33f);
                 final float ccy = storyParams.originalAvatarRect.centerY() + dp(19);
                 if (communityArrowDrawable == null) {
@@ -4901,6 +4963,9 @@ public class DialogCell extends BaseCell implements StoriesListPlaceProvider.Ava
             int countLeftOld =  (int) (storyParams.originalAvatarRect.left + storyParams.originalAvatarRect.width() - countWidthOld - dp(5f));
             int countTop = (int) (avatarImage.getImageY() + storyParams.originalAvatarRect.height() - dp(22));
             drawCounter(canvas, drawCounterMuted, newTop, countLeftLocal, countLeftOld, rightFragmentOpenedProgress, true);
+        } else if (railMode && !drawError) {
+            // fork: узкая панель — счётчик поверх правого нижнего угла аватарки, с обводкой для читаемости на фото
+            drawCounter(canvas, isCounterMuted(), countTop, countLeft, countLeftOld, 1f, true);
         }
 
         if (collapseOffset != 0) {

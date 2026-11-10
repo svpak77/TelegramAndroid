@@ -423,6 +423,11 @@ public class SimpleTextView extends View implements Drawable.Callback {
                         width += drawablePadding;
                     }
                 }
+                // fork: в очень узкой панели (разделитель стянут) ширина за вычетом значков уходит в минус —
+                // StaticLayout тогда бросает исключение и остаётся устаревший layout; ноль даёт пустой текст
+                if (width < 0) {
+                    width = 0;
+                }
                 if (buildFullLayout) {
                     CharSequence string = text;
                     if (!ellipsizeByGradient) {

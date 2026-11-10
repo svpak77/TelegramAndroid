@@ -631,6 +631,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
 
     @Override
     public void onResume() {
+        AndroidUtilities.setTabletLeftPaneMinWidthDp(200);
         super.onResume();
         if (listView != null) {
             listView.adapter.update(true);

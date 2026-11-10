@@ -7212,6 +7212,7 @@ public class DialogsActivity extends BaseFragment implements NotificationCenter.
 
     @Override
     public void onResume() {
+        AndroidUtilities.setTabletLeftPaneMinWidthDp(80);
         super.onResume();
         if (dialogStoriesCell != null) {
             dialogStoriesCell.onResume();

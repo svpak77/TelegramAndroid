@@ -936,10 +936,103 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 }
 
                 private boolean inLayout;
+                private boolean draggingSplit;
+                private boolean pendingRelayout; // fork: запрос раскладки, отложенный до конца текущего прохода
+                private int splitLeftWidth;      // fork: ширина левой панели, вычисленная в onMeasure
                 @Override
                 public void requestLayout() {
-                    if (inLayout) return;
+                    if (inLayout) {
+                        // fork: во время своего измерения/раскладки не выбрасываем запрос детей, а повторяем его следующим кадром —
+                        // иначе список контактов и настройки остаются с разметкой от старой (узкой) ширины
+                        if (!pendingRelayout) {
+                            pendingRelayout = true;
+                            AndroidUtilities.runOnUIThread(() -> {
+                                pendingRelayout = false;
+                                requestLayout();
+                            });
+                        }
+                        return;
+                    }
                     super.requestLayout();
+                }
+
+                // fork: разделитель тянется только там, где слева список чатов,
+                // и контакты-вкладка; в остальных (настройки и т.п.) — штатный планшетный режим
+                private boolean leftPaneIsChatList() {
+                    if (actionBarLayout == null) {
+                        return false;
+                    }
+                    final BaseFragment last = actionBarLayout.getLastFragmentIncludeMainTabs();
+                    // fork: вкладка «Контакты» тоже двигает разделитель
+                    return last instanceof DialogsActivity && ((DialogsActivity) last).isMainDialogList()
+                        || last instanceof ContactsActivity && ((ContactsActivity) last).hasMainTabs;
+                }
+
+                private void updateSplitResizable() {
+                    // fork: тянуть разделитель можно в любом разделе; минимум ширины зависит от содержимого панели
+                    AndroidUtilities.tabletSplitMinPaneDp = leftPaneMinWidthDp();
+                }
+
+                /** fork: «Настройки» и «Профиль» сверстаны минимум на 200dp, остальным хватает 80dp */
+                private int leftPaneMinWidthDp() {
+                    if (actionBarLayout == null) {
+                        return 200;
+                    }
+                    BaseFragment last = actionBarLayout.getLastFragment();
+                    if (last == null) {
+                        last = actionBarLayout.getLastFragmentIncludeMainTabs();
+                    }
+                    if (last != null) {
+                        final String n = last.getClass().getSimpleName();
+                        if (n.startsWith("Settings") || n.startsWith("Profile") || n.startsWith("BaseSettings")) {
+                            return 200;
+                        }
+                    }
+                    return 80;
+                }
+
+                @Override
+                public boolean onInterceptTouchEvent(MotionEvent ev) {
+                    if (tabletFullSize || rightActionBarLayout == null) { // fork: пустая правая панель тоже должна резайзиться
+                        return false;
+                    }
+                    if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                        updateSplitResizable();
+                        final int leftWidth = AndroidUtilities.getTabletLeftFragmentSize(getMeasuredWidth(), insets.left, insets.right);
+                        if (Math.abs(ev.getX() - leftWidth) <= AndroidUtilities.dp(24)) {
+                            draggingSplit = true;
+                            return true;
+                        }
+                    }
+                    return super.onInterceptTouchEvent(ev);
+                }
+
+                @Override
+                public boolean onTouchEvent(MotionEvent ev) {
+                    if (!draggingSplit) {
+                        return super.onTouchEvent(ev);
+                    }
+                    switch (ev.getActionMasked()) {
+                        case MotionEvent.ACTION_MOVE: {
+                            final int width = getMeasuredWidth();
+                            final int usable = Math.max(1, width - insets.left - insets.right);
+                            SharedConfig.setTabletSplitFraction((ev.getX() - insets.left) / (float) usable);
+                            requestLayout();
+                            relayoutPanesThrottled(); // fork: подтягиваем разметку панелей прямо во время движения полосы
+                            invalidate();
+                            return true;
+                        }
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_CANCEL: {
+                            draggingSplit = false;
+                            relayoutPanes(); // fork: пересчитать содержимое панелей после ресайза
+                            SharedConfig.saveConfig();
+                            invalidate();
+                            return true;
+                        }
+                        default:
+                            return true;
+                    }
                 }
                 @Override
                 protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -947,6 +1040,9 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     final int width = MeasureSpec.getSize(widthMeasureSpec);
                     final int height = MeasureSpec.getSize(heightMeasureSpec);
                     setMeasuredDimension(width, height);
+
+                // ширина левой панели зависит от того, что в ней открыто: список чатов двигаем, остальное — стандарт
+                updateSplitResizable();
 
                     // fragments are distributed between stacks only in checkLayout(), so follow its decision
                     // and re-run it if the split condition changed without a configuration change (e.g. on folds)
@@ -963,6 +1059,7 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     }
                     if (!tabletFullSize) {
                         final int leftWidth = AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right);
+                        splitLeftWidth = leftWidth; // fork: запоминаем, чтобы onLayout использовал ровно эту ширину
                         actionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(leftWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                         rightActionBarLayout.getView().measure(MeasureSpec.makeMeasureSpec(width - leftWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                     } else {
@@ -982,8 +1079,10 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                 protected void onLayout(boolean changed, int l, int t, int r, int b) {
                     final int width = getMeasuredWidth();
                     final int height = getMeasuredHeight();
+                    inLayout = true; // fork: во время раскладки requestLayout откладываем, иначе бесконечный пересчёт
                     if (!tabletFullSize) {
-                        final int leftWidth = AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right);
+                        // fork: ширина из onMeasure, чтобы измерение и раскладка не разошлись
+                        final int leftWidth = splitLeftWidth > 0 ? splitLeftWidth : AndroidUtilities.getTabletLeftFragmentSize(width, insets.left, insets.right);
                         actionBarLayout.getView().layout(0, 0, actionBarLayout.getView().getMeasuredWidth(), actionBarLayout.getView().getMeasuredHeight());
                         rightActionBarLayout.getView().layout(leftWidth, 0, leftWidth + rightActionBarLayout.getView().getMeasuredWidth(), rightActionBarLayout.getView().getMeasuredHeight());
                     } else {
@@ -994,6 +1093,37 @@ public class LaunchActivity extends BasePermissionsActivity implements INavigati
                     layersActionBarLayout.getView().layout(x, y, x + layersActionBarLayout.getView().getMeasuredWidth(), y + layersActionBarLayout.getView().getMeasuredHeight());
                     backgroundTablet.layout(0, 0, backgroundTablet.getMeasuredWidth(), backgroundTablet.getMeasuredHeight());
                     shadowTablet.layout(0, 0, shadowTablet.getMeasuredWidth(), shadowTablet.getMeasuredHeight());
+                    inLayout = false;
+                }
+
+                /** fork: страницы вкладок кэшируют ширину — просим пересчёт у всего поддерева панелей */
+                private void forceRelayoutDeep(View v) {
+                    if (v == null) {
+                        return;
+                    }
+                    v.requestLayout();
+                    if (v instanceof android.view.ViewGroup) {
+                        final android.view.ViewGroup g = (android.view.ViewGroup) v;
+                        for (int i = 0, n = g.getChildCount(); i < n; i++) {
+                            forceRelayoutDeep(g.getChildAt(i));
+                        }
+                    }
+                }
+
+                private long lastPaneRelayout;
+
+                /** fork: во время перетаскивания пересчитываем панели не чаще раза в 60 мс — иначе призрачные остатки старой разметки */
+                private void relayoutPanesThrottled() {
+                    // fork: без прореживания — иначе между кадрами остаются призрачные полосы старой разметки
+                    relayoutPanes();
+                }
+
+                private void relayoutPanes() {
+                    // fork: после ресайза левая панель (контакты, настройки) должна перестроиться сама, без смены вкладки
+                    lastPaneRelayout = android.os.SystemClock.uptimeMillis();
+                    forceRelayoutDeep(actionBarLayout == null ? null : actionBarLayout.getView());
+                    forceRelayoutDeep(rightActionBarLayout == null ? null : rightActionBarLayout.getView());
+                    invalidate();
                 }
 
                 @Override

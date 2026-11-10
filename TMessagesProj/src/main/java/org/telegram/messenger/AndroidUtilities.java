@@ -3129,8 +3129,36 @@ public class AndroidUtilities {
         }
     }
 
+    public static int tabletMinLeftPaneDp = 200;
+
+    /** fork: минимальная ширина левой панели в dp; «Настройки»/«Профиль» требуют 200, чатам и контактам хватает 80 */
+    public static int tabletSplitMinPaneDp = 80;
+    /** стандартная доля левой панели планшетного режима */
+    public static final float TABLET_SPLIT_DEFAULT_FRACTION = 0.35f;
+
+    public static void setTabletLeftPaneMinWidthDp(int value) {
+        if (tabletMinLeftPaneDp == value) {
+            return;
+        }
+        tabletMinLeftPaneDp = value;
+        if (LaunchActivity.instance != null) {
+            LaunchActivity.instance.runOnUiThread(() -> {
+                if (LaunchActivity.instance != null) {
+                    LaunchActivity.instance.getWindow().getDecorView().requestLayout();
+                }
+            });
+        }
+    }
+
     public static int getTabletLeftFragmentSize(final int fullWidth, final int insetLeft, final int insetRight) {
-        return insetLeft + Math.max(dp(320), (fullWidth - insetLeft - insetRight) * 35 / 100);
+        final int usable = Math.max(0, fullWidth - insetLeft - insetRight);
+        final int rightMin = Math.min(dp(300), usable / 3);
+        // fork: доля всегда из настроек — разделитель тянется в любом разделе,
+        // а минимум зависит от содержимого: 80dp для чатов/контактов, 200dp для настроек/профиля (иначе содержимое обрезается)
+        final float fraction = SharedConfig.tabletSplitFraction;
+        final int minDp = tabletSplitMinPaneDp;
+        final int wanted = (int) (usable * fraction);
+        return insetLeft + Math.max(dp(minDp), Math.min(wanted, usable - rightMin));
     }
 
     public static int getPhotoSize() {

@@ -227,7 +227,8 @@ public class SessionsActivity extends BaseFragment implements NotificationCenter
         if (parentLayout != null && parentLayout.isRightLayout()) {
             simpleActionBar.setBackButtonImage(R.drawable.ic_ab_close);
         }
-        if (currentType == TYPE_DEVICES) {
+        // fork: экран на simpleActionBar, actionBar здесь не создаётся (BaseFragment) -> был NPE при открытии «Устройств»
+        if (currentType == TYPE_DEVICES && actionBar != null) {
             AccountSelector.addToMenu(this, actionBar.createMenu(), accountSelectorId, this::switchAccount);
         }
 

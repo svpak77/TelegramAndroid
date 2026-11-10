@@ -68,6 +68,22 @@ public class MainTabsLayout extends AnimatedLinearLayout {
         final int maxTotalWidthForTabs = width - getPaddingLeft() - getPaddingRight();
         final int minTotalWidthForTabs = Math.min(dp(320), maxTotalWidthForTabs);
 
+        // fork: узкая левая панель — все вкладки не влезают, показываем одну активную + стрелку меню.
+        // Решение зависит только от ширины и числа логических вкладок, а не от текущего режима — без дребезга.
+        int logicalTabs = 0;
+        for (int a = 0, N = getChildCount(); a < N; a++) {
+            if (isViewVisible(getChildAt(a))) logicalTabs++;
+        }
+        final boolean compactNow = compactListener != null && logicalTabs > 1 && maxTotalWidthForTabs < logicalTabs * dp(COMPACT_MIN_TAB_DP);
+        if (compactNow != compactMode) {
+            compactMode = compactNow;
+            compactTouchDown = false;
+        }
+        if (compactMode) {
+            measureCompact(maxTotalWidthForTabs, height, tabHeight);
+            return;
+        }
+
         int chosenPass = PASS_TEXT_SIZES_DP.length - 1;
         float lastMeasuredTextSize = -1;
         for (int pass = 0; pass < PASS_TEXT_SIZES_DP.length; pass++) {
@@ -153,6 +169,119 @@ public class MainTabsLayout extends AnimatedLinearLayout {
         calculateTotalSizesAfterMeasure();
     }
 
+    // fork: компакт-режим нижних вкладок для узкой панели планшета
+    private static final int COMPACT_MIN_TAB_DP = 56;
+    private static final int COMPACT_MAX_TAB_DP = 96;
+    private boolean compactMode;
+    private boolean compactTouchDown;
+    private Runnable compactListener;
+    private final Paint compactArrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.Path compactArrowPath = new android.graphics.Path();
+
+    /** fork: что делать по нажатию в компакт-режиме (меню вкладок); null — компакт-режим выключен */
+    public void setCompactListener(Runnable listener) {
+        compactListener = listener;
+        requestLayout();
+    }
+
+    public boolean isCompactMode() {
+        return compactMode;
+    }
+
+    /** fork: активная вкладка сменилась — в компакт-режиме надо переразложить, чтобы показать её */
+    public void onTabSelectionChanged() {
+        if (compactMode) {
+            requestLayout();
+        }
+    }
+
+    private View findCompactTab() {
+        View first = null;
+        for (int a = 0, N = getChildCount(); a < N; a++) {
+            final View child = getChildAt(a);
+            if (!isViewVisible(child)) continue;
+            if (first == null) first = child;
+            if (child instanceof GlassTabView && ((GlassTabView) child).isTabSelected()) {
+                return child;
+            }
+        }
+        return first;
+    }
+
+    // fork: ширину получает только активная вкладка, остальные — 0 и прозрачны (видимость в AnimatedLinearLayout не трогаем,
+    // чтобы не конфликтовать с setViewVisible() для вкладок Звонки/Настройки)
+    private void measureCompact(int maxTotalWidthForTabs, int height, int tabHeight) {
+        final int N = getChildCount();
+        if (tabsWidth == null || tabsWidth.length < N) {
+            measureTabTexts(PASS_TEXT_SIZES_DP[PASS_TEXT_SIZES_DP.length - 1]);
+        }
+        applyPassTextSize(PASS_TEXT_SIZES_DP.length - 1);
+        final View active = findCompactTab();
+        final int activeWidth = Math.max(0, Math.min(maxTotalWidthForTabs, dp(COMPACT_MAX_TAB_DP)));
+        int l = 0;
+        for (int a = 0; a < N; a++) {
+            final View child = getChildAt(a);
+            final int w = child == active ? activeWidth : 0;
+            tabsWidth[a] = w;
+            tabsLeftPos[a] = l;
+            l += w;
+            child.measure(
+                MeasureSpec.makeMeasureSpec(w, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(Math.max(0, tabHeight), MeasureSpec.EXACTLY));
+        }
+        setMeasuredDimension(l + getPaddingLeft() + getPaddingRight(), height);
+        calculateTotalSizesAfterMeasure();
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(MotionEvent ev) {
+        // fork: в компакт-режиме нажатие открывает меню вкладок, а не переключает вкладку
+        return compactMode || super.onInterceptTouchEvent(ev);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public boolean onTouchEvent(MotionEvent ev) {
+        if (!compactMode) {
+            return super.onTouchEvent(ev);
+        }
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                compactTouchDown = true;
+                return true;
+            case MotionEvent.ACTION_UP:
+                if (compactTouchDown && ev.getX() >= 0 && ev.getX() <= getWidth() && ev.getY() >= 0 && ev.getY() <= getHeight() && compactListener != null) {
+                    compactListener.run();
+                }
+                compactTouchDown = false;
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                compactTouchDown = false;
+                return true;
+        }
+        return true;
+    }
+
+    private void drawCompactArrow(Canvas canvas) {
+        final View active = findCompactTab();
+        if (active == null || active.getWidth() <= 0) return;
+        // стрелка «вниз» у правого края активной вкладки, между иконкой и подписью
+        final float cx = active.getX() + active.getWidth() - dp(9);
+        final float cy = active.getY() + dp(22);
+        final float hw = dp(3.5f);
+        final float hh = dp(2f);
+        compactArrowPath.rewind();
+        compactArrowPath.moveTo(cx - hw, cy - hh);
+        compactArrowPath.lineTo(cx, cy + hh);
+        compactArrowPath.lineTo(cx + hw, cy - hh);
+        compactArrowPaint.setStyle(Paint.Style.STROKE);
+        compactArrowPaint.setStrokeCap(Paint.Cap.ROUND);
+        compactArrowPaint.setStrokeJoin(Paint.Join.ROUND);
+        compactArrowPaint.setStrokeWidth(dp(1.66f));
+        compactArrowPaint.setColor(Theme.getColor(Theme.key_glass_tabSelected, resourcesProvider));
+        canvas.drawPath(compactArrowPath, compactArrowPaint);
+    }
+
     public interface Tab {
         float measureTextWidth();
         default float measureTextWidth(float textSizeDp) { return measureTextWidth(); }
@@ -222,6 +351,10 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
     @Override
     protected void setChildVisibilityFactor(View view, float factor) {
+        // fork: в компакт-режиме неактивные вкладки (ширина 0) не рисуем — clipChildren=false, иконка вылезла бы
+        if (compactMode && view.getMeasuredWidth() <= 0) {
+            factor = 0f;
+        }
         final float s = lerp(0.7f, 1f, factor);
         view.setAlpha(factor);
         view.setScaleX(s);
@@ -321,6 +454,9 @@ public class MainTabsLayout extends AnimatedLinearLayout {
         }
 
         super.dispatchDraw(canvas);
+        if (compactMode) {
+            drawCompactArrow(canvas);
+        }
     }
 
 
@@ -605,7 +741,10 @@ public class MainTabsLayout extends AnimatedLinearLayout {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        clickHelper.onTouchEvent(this, ev);
+        // fork: долгое нажатие с перетаскиванием между вкладками в компакт-режиме не имеет смысла
+        if (!compactMode) {
+            clickHelper.onTouchEvent(this, ev);
+        }
         return super.dispatchTouchEvent(ev);
     }
 

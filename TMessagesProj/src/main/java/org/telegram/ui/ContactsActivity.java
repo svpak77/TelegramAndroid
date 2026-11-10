@@ -1067,6 +1067,8 @@ public class ContactsActivity extends BaseFragment implements FactorAnimator.Tar
 
     @Override
     public void onResume() {
+        // fork: контакты во вкладке тоже тянутся разделителем, до узкой полосы как у списка чатов
+        AndroidUtilities.setTabletLeftPaneMinWidthDp(hasMainTabs ? 80 : 200);
         super.onResume();
         if (listViewAdapter != null) {
             listViewAdapter.notifyDataSetChanged();

@@ -280,6 +280,7 @@ public class SharedConfig {
     public static boolean storiesIntroShown;
     public static boolean disableVoiceAudioEffects;
     public static boolean forceDisableTabletMode;
+    public static float tabletSplitFraction = 0.35f;
     public static boolean updateStickersOrderOnSend = true;
     public static boolean bigCameraForRound;
     public static Boolean useCamera2Force;
@@ -466,6 +467,7 @@ public class SharedConfig {
                 SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("userconfing", Context.MODE_PRIVATE);
                 SharedPreferences.Editor editor = preferences.edit();
                 editor.putBoolean("saveIncomingPhotos", saveIncomingPhotos);
+                editor.putFloat("tabletSplitFraction", tabletSplitFraction);
                 editor.putString("passcodeHash1", passcodeHash);
                 editor.putString("passcodeSalt", passcodeSalt.length > 0 ? Base64.encodeToString(passcodeSalt, Base64.DEFAULT) : "");
                 editor.putBoolean("appLocked", appLocked);
@@ -662,6 +664,7 @@ public class SharedConfig {
             // compact mode is still in development: private beta only
             compactMode = preferences.getBoolean("compactMode", false);
             forceDisableTabletMode = preferences.getBoolean("forceDisableTabletMode", false);
+            tabletSplitFraction = preferences.getFloat("tabletSplitFraction", 0.35f);
             streamAllVideo = preferences.getBoolean("streamAllVideo", BuildVars.DEBUG_VERSION);
             streamMkv = preferences.getBoolean("streamMkv", false);
             suggestStickers = preferences.getInt("suggestStickers", 0);
@@ -1462,6 +1465,10 @@ public class SharedConfig {
 
     public static void toggleChatBlur() {
         LiteMode.toggleFlag(LiteMode.FLAG_CHAT_BLUR);
+    }
+
+    public static void setTabletSplitFraction(float value) {
+        tabletSplitFraction = Math.max(0.05f, Math.min(0.85f, value));
     }
 
     public static void toggleForceDisableTabletMode() {
