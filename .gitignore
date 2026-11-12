@@ -26,3 +26,11 @@ TMessagesProj/jni/prebuild/lib/
 TMessagesProj/jni/prebuild/include/
 TMessagesProj/jni/prebuild/pkgconfig/
 TMessagesProj/jni/prebuild/build_env.txt
+
+# local build secrets / outputs
+mykey.jks
+*.jks
+!TMessagesProj/config/*.keystore
+out/
+*.apk
+gradle.properties.local

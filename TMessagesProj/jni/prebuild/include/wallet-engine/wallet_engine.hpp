@@ -205,190 +205,111 @@ typedef std::string UnsignedDecimalString;
 
 
 /**
- * The lifecycle state of a TON account.
+ * Classifies a durable journal failure reported by the host.
  */
-enum class AccountStatus: int32_t {
+enum class JournalHostErrorKind: int32_t {
     /**
-     * No account exists at the address.
+     * Durable storage is temporarily unavailable.
      */
-    kNonexistent = 1,
+    kUnavailable = 1,
     /**
-     * The account exists but its contract state is not initialized.
+     * The stored record cannot be read without data loss.
      */
-    kUninitialized = 2,
+    kCorruptData = 2,
     /**
-     * The account contract is active.
-     */
-    kActive = 3,
-    /**
-     * The account contract is frozen.
-     */
-    kFrozen = 4,
-    /**
-     * The provider returned an unrecognized account state.
-     */
-    kUnknown = 5
-};
-
-
-/**
- * The terminal result of a wallet client operation.
- */
-enum class WalletOperationOutcome: int32_t {
-    /**
-     * All requested resources completed successfully.
-     */
-    kCompleted = 1,
-    /**
-     * Some refresh resources succeeded and some failed.
-     */
-    kPartiallyCompleted = 2,
-    /**
-     * The requested operation failed.
-     */
-    kFailed = 3,
-    /**
-     * The host or caller cancelled the operation.
-     */
-    kCancelled = 4,
-    /**
-     * A newer operation replaced this operation before publication completed.
-     */
-    kSuperseded = 5,
-    /**
-     * Preconditions did not permit work, so the client made no request.
-     */
-    kSkipped = 6
-};
-
-
-/**
- * An HTTP method that the host must execute.
- */
-enum class HttpMethod: int32_t {
-    /**
-     * An HTTP GET request.
-     */
-    kGet = 1,
-    /**
-     * An HTTP POST request.
-     */
-    kPost = 2
-};
-
-
-/**
- * Classifies a failure reported by the HTTP host.
- */
-enum class HttpHostErrorKind: int32_t {
-    /**
-     * No network connection is available.
-     */
-    kOffline = 1,
-    /**
-     * The request exceeded a host timeout.
-     */
-    kTimeout = 2,
-    /**
-     * An established connection ended before completion.
-     */
-    kConnectionLost = 3,
-    /**
-     * DNS resolution failed.
-     */
-    kDns = 4,
-    /**
-     * TLS negotiation or certificate validation failed.
-     */
-    kTls = 5,
-    /**
-     * The request violated a host security policy.
-     */
-    kPolicyViolation = 6,
-    /**
-     * The response exceeded a limit imposed by the host.
-     */
-    kResponseTooLarge = 7,
-    /**
-     * The host cancelled the request.
-     */
-    kCancelled = 8,
-    /**
-     * The failure does not match another kind.
-     */
-    kOther = 9
-};
-
-
-/**
- * Classifies a protected-storage failure reported by the host.
- */
-enum class ProtectedSecretHostErrorKind: int32_t {
-    /**
-     * No secret exists for the reference.
-     */
-    kNotFound = 1,
-    /**
-     * User or device authentication failed.
-     */
-    kAuthenticationFailed = 2,
-    /**
-     * The user or host cancelled the operation.
+     * The host cancelled the storage operation.
      */
     kCancelled = 3,
     /**
-     * Protected storage is temporarily unavailable.
-     */
-    kUnavailable = 4,
-    /**
-     * The request violates a platform security policy.
-     */
-    kPolicyViolation = 5,
-    /**
      * The failure does not match another kind.
      */
-    kOther = 6
+    kOther = 4
+};
+
+
+/**
+ * Selects the TON network used for addresses, providers, and wallet derivation.
+ */
+enum class Network: int32_t {
+    /**
+     * The production TON network.
+     */
+    kMainnet = 1,
+    /**
+     * The public TON test network.
+     */
+    kTestnet = 2
+};
+
+
+/**
+ * The on-chain result of the transaction or internal message.
+ */
+enum class ActivityStatus: int32_t {
+    /**
+     * The transaction completed and this message was not a bounce.
+     */
+    kSuccess = 1,
+    /**
+     * The transaction was aborted while processing the message.
+     */
+    kFailed = 2,
+    /**
+     * The internal message has the on-chain `bounced` flag.
+     */
+    kBounced = 3
+};
+
+
+/**
+ * Selects one durable journal slot for one wallet record.
+ */
+struct JournalKey {
+    /**
+     * The stable application record identifier.
+     */
+    std::string record_id;
+    /**
+     * The engine-defined slot name.
+     */
+    std::string slot;
 };
 
 namespace uniffi {
-struct FfiConverterTonAddressFormat;
+struct FfiConverterSendExpiration;
 } // namespace uniffi
 
 /**
- * Selects a raw representation or a user-friendly representation with flags.
+ * The policy used to select the wallet message expiration boundary.
  */
-struct TonAddressFormat {
-    friend uniffi::FfiConverterTonAddressFormat;
+struct SendExpiration {
+    friend uniffi::FfiConverterSendExpiration;
     /**
-     * `workchain:64-hex` without display or network flags.
+     * Derive expiration from fresh provider time and engine configuration.
      */
-    struct kRaw {
+    struct kEngineDefault {
     };
     /**
-     * TEP-2 user-friendly Base64 with a checksum and display flags.
+     * Preserve a caller-selected Unix expiration timestamp.
      */
-    struct kUserFriendly {
+    struct kExact {
         /**
-         * Whether senders should use a bounceable internal message.
+         * The Unix expiration timestamp in seconds.
          */
-        bool bounceable;
-        /**
-         * Whether mainnet applications must reject the address.
-         */
-        bool testnet;
+        uint64_t unix_timestamp;
     };
-    TonAddressFormat(kRaw variant): variant(variant) {}
-    TonAddressFormat(kUserFriendly variant): variant(variant) {}
+    SendExpiration(kEngineDefault variant): variant(variant) {}
+    SendExpiration(kExact variant): variant(variant) {}
 
-    TonAddressFormat(const TonAddressFormat &other): variant(other.variant) {}
-    TonAddressFormat(TonAddressFormat &&other): variant(std::move(other.variant)) {}
+    SendExpiration(const SendExpiration &other): variant(other.variant) {}
+    SendExpiration(SendExpiration &&other): variant(std::move(other.variant)) {}
 
-    TonAddressFormat &operator=(const TonAddressFormat &other) {
+    SendExpiration &operator=(const SendExpiration &other) {
         variant = other.variant;
         return *this;
     }
 
-    TonAddressFormat &operator=(TonAddressFormat &&other) {
+    SendExpiration &operator=(SendExpiration &&other) {
         variant = std::move(other.variant);
         return *this;
     }
@@ -396,170 +317,29 @@ struct TonAddressFormat {
     /**
      * Returns the variant of this enum
      */
-    const std::variant<kRaw, kUserFriendly> &get_variant() const {
+    const std::variant<kEngineDefault, kExact> &get_variant() const {
         return variant;
     }
 
 private:
-    std::variant<kRaw, kUserFriendly> variant;
+    std::variant<kEngineDefault, kExact> variant;
 
-    TonAddressFormat();
+    SendExpiration();
 };
 
 
 /**
- * TON Connect RPC error code returned for an unsupported request.
+ * One opaque versioned journal value owned by the engine.
  */
-enum class TonConnectRpcErrorCode: int32_t {
+struct JournalRecord {
     /**
-     * Unexpected wallet-side failure.
+     * The positive compare-and-swap version.
      */
-    kUnknown = 1,
+    uint64_t version;
     /**
-     * Malformed request.
+     * The opaque engine payload. The host must preserve these bytes exactly.
      */
-    kBadRequest = 2,
-    /**
-     * Unknown or revoked application session.
-     */
-    kUnknownApp = 3,
-    /**
-     * User declined the request.
-     */
-    kUserDeclined = 4,
-    /**
-     * Wallet does not implement the method or shape.
-     */
-    kMethodNotSupported = 5
-};
-
-
-/**
- * An opaque reference to recovery words in host protected storage.
- */
-struct ProtectedSecretRef {
-    /**
-     * The host storage key. The value does not contain secret bytes.
-     */
-    std::string value;
-};
-
-
-/**
- * Correlation identity generated by Rust. Hosts can use it to bind their
- * native cancellation bookkeeping, but must not assign semantic meaning to
- * the numeric value.
- */
-struct HttpRequestId {
-    /**
-     * An opaque numeric value allocated by this client instance.
-     */
-    uint64_t value;
-};
-
-
-/**
- * One HTTP header name and value.
- */
-struct HttpHeader {
-    /**
-     * The header name.
-     */
-    std::string name;
-    /**
-     * The header value.
-     */
-    std::string value;
-};
-
-
-/**
- * Selects how the signed key-rotation request will reach Wallet rev00.
- */
-enum class KeyRotationMessageKind: int32_t {
-    /**
-     * Complete incoming external message for direct provider submission.
-     */
-    kExternal = 1,
-    /**
-     * Complete owner-signed internal message for a gas-paying relayer.
-     */
-    kInternal = 2
-};
-
-
-/**
- * A deliberately one-shot presentation value, not wallet state.
- *
- * The UI must discard this value as soon as the recovery-phrase screen is
- * dismissed. Neither `WalletDescriptor` nor `WalletSnapshot` contains it.
- *
- * A newly created wallet has a 12-word phrase; the phrase becomes 24 words
- * when the wallet's key is rotated.
- */
-struct RecoveryPhrase {
-    /**
-     * The recovery words in order, separated by one ASCII space.
-     *
-     * Keeping the phrase in one allocation avoids separately allocated
-     * secret strings at the FFI boundary. Split it only while presenting
-     * individual words, then release those temporary views.
-     */
-    std::string phrase;
-};
-
-
-/**
- * Runtime platform advertised as the TypeScript protocol's `DeviceInfo.platform`.
- *
- * This is deliberately different from wallets-list platforms such as `ios`,
- * `macos`, or `chrome`, which describe installation targets rather than the
- * runtime that produced a connect event.
- */
-enum class TonConnectDevicePlatform: int32_t {
-    /**
-     * iPhone application.
-     */
-    kIphone = 1,
-    /**
-     * iPad application.
-     */
-    kIpad = 2,
-    /**
-     * Android application.
-     */
-    kAndroid = 3,
-    /**
-     * Windows application.
-     */
-    kWindows = 4,
-    /**
-     * macOS application.
-     */
-    kMac = 5,
-    /**
-     * Linux application.
-     */
-    kLinux = 6,
-    /**
-     * Browser application or extension.
-     */
-    kBrowser = 7
-};
-
-
-/**
- * The value flow direction for one activity item.
- */
-enum class ActivityDirection: int32_t {
-    /**
-     * Value left the wallet.
-     */
-    kSent = 1,
-    /**
-     * Value entered the wallet.
-     */
-    kReceived = 2
+    std::vector<uint8_t> payload;
 };
 
 
@@ -640,77 +420,130 @@ enum class SendPhase: int32_t {
 
 
 /**
- * Classifies a durable journal failure reported by the host.
+ * An HTTP method that the host must execute.
  */
-enum class JournalHostErrorKind: int32_t {
+enum class HttpMethod: int32_t {
     /**
-     * Durable storage is temporarily unavailable.
+     * An HTTP GET request.
      */
-    kUnavailable = 1,
+    kGet = 1,
     /**
-     * The stored record cannot be read without data loss.
+     * An HTTP POST request.
      */
-    kCorruptData = 2,
-    /**
-     * The host cancelled the storage operation.
-     */
-    kCancelled = 3,
-    /**
-     * The failure does not match another kind.
-     */
-    kOther = 4
+    kPost = 2
 };
 
-namespace uniffi {
-struct FfiConverterSendExpiration;
-} // namespace uniffi
 
 /**
- * The policy used to select the wallet message expiration boundary.
+ * One HTTP header name and value.
  */
-struct SendExpiration {
-    friend uniffi::FfiConverterSendExpiration;
+struct HttpHeader {
     /**
-     * Derive expiration from fresh provider time and engine configuration.
+     * The header name.
      */
-    struct kEngineDefault {
-    };
+    std::string name;
     /**
-     * Preserve a caller-selected Unix expiration timestamp.
+     * The header value.
      */
-    struct kExact {
-        /**
-         * The Unix expiration timestamp in seconds.
-         */
-        uint64_t unix_timestamp;
-    };
-    SendExpiration(kEngineDefault variant): variant(variant) {}
-    SendExpiration(kExact variant): variant(variant) {}
+    std::string value;
+};
 
-    SendExpiration(const SendExpiration &other): variant(other.variant) {}
-    SendExpiration(SendExpiration &&other): variant(std::move(other.variant)) {}
 
-    SendExpiration &operator=(const SendExpiration &other) {
-        variant = other.variant;
-        return *this;
-    }
-
-    SendExpiration &operator=(SendExpiration &&other) {
-        variant = std::move(other.variant);
-        return *this;
-    }
-
+/**
+ * Runtime platform advertised as the TypeScript protocol's `DeviceInfo.platform`.
+ *
+ * This is deliberately different from wallets-list platforms such as `ios`,
+ * `macos`, or `chrome`, which describe installation targets rather than the
+ * runtime that produced a connect event.
+ */
+enum class TonConnectDevicePlatform: int32_t {
     /**
-     * Returns the variant of this enum
+     * iPhone application.
      */
-    const std::variant<kEngineDefault, kExact> &get_variant() const {
-        return variant;
-    }
+    kIphone = 1,
+    /**
+     * iPad application.
+     */
+    kIpad = 2,
+    /**
+     * Android application.
+     */
+    kAndroid = 3,
+    /**
+     * Windows application.
+     */
+    kWindows = 4,
+    /**
+     * macOS application.
+     */
+    kMac = 5,
+    /**
+     * Linux application.
+     */
+    kLinux = 6,
+    /**
+     * Browser application or extension.
+     */
+    kBrowser = 7
+};
 
-private:
-    std::variant<kEngineDefault, kExact> variant;
 
-    SendExpiration();
+/**
+ * The current state of one independently loaded resource.
+ */
+enum class ResourcePhase: int32_t {
+    /**
+     * No load is active and no successful value is available yet.
+     */
+    kIdle = 1,
+    /**
+     * A load is active.
+     */
+    kLoading = 2,
+    /**
+     * The latest load for this resource succeeded.
+     */
+    kReady = 3,
+    /**
+     * The latest load for this resource failed.
+     */
+    kFailed = 4
+};
+
+
+/**
+ * A deliberately one-shot presentation value, not wallet state.
+ *
+ * The UI must discard this value as soon as the recovery-phrase screen is
+ * dismissed. Neither `WalletDescriptor` nor `WalletSnapshot` contains it.
+ *
+ * A newly created wallet has a 12-word phrase; the phrase becomes 24 words
+ * when the wallet's key is rotated.
+ */
+struct RecoveryPhrase {
+    /**
+     * The recovery words in order, separated by one ASCII space.
+     *
+     * Keeping the phrase in one allocation avoids separately allocated
+     * secret strings at the FFI boundary. Split it only while presenting
+     * individual words, then release those temporary views.
+     */
+    std::string phrase;
+};
+
+
+/**
+ * Selects how the signed key-rotation request will reach Wallet rev00.
+ */
+enum class KeyRotationMessageKind: int32_t {
+    /**
+     * Complete incoming external message for direct provider submission.
+     */
+    kExternal = 1,
+    /**
+     * Complete owner-signed internal message for a gas-paying relayer.
+     */
+    kInternal = 2
 };
 
 
@@ -746,6 +579,157 @@ enum class StatuslessHostErrorKind: int32_t {
      * The failure does not match another kind.
      */
     kOther = 7
+};
+
+
+/**
+ * The terminal result of a wallet client operation.
+ */
+enum class WalletOperationOutcome: int32_t {
+    /**
+     * All requested resources completed successfully.
+     */
+    kCompleted = 1,
+    /**
+     * Some refresh resources succeeded and some failed.
+     */
+    kPartiallyCompleted = 2,
+    /**
+     * The requested operation failed.
+     */
+    kFailed = 3,
+    /**
+     * The host or caller cancelled the operation.
+     */
+    kCancelled = 4,
+    /**
+     * A newer operation replaced this operation before publication completed.
+     */
+    kSuperseded = 5,
+    /**
+     * Preconditions did not permit work, so the client made no request.
+     */
+    kSkipped = 6
+};
+
+
+/**
+ * The value flow direction for one activity item.
+ */
+enum class ActivityDirection: int32_t {
+    /**
+     * Value left the wallet.
+     */
+    kSent = 1,
+    /**
+     * Value entered the wallet.
+     */
+    kReceived = 2
+};
+
+
+/**
+ * Correlation identity generated by Rust. Hosts can use it to bind their
+ * native cancellation bookkeeping, but must not assign semantic meaning to
+ * the numeric value.
+ */
+struct HttpRequestId {
+    /**
+     * An opaque numeric value allocated by this client instance.
+     */
+    uint64_t value;
+};
+
+
+/**
+ * TON Connect RPC error code returned for an unsupported request.
+ */
+enum class TonConnectRpcErrorCode: int32_t {
+    /**
+     * Unexpected wallet-side failure.
+     */
+    kUnknown = 1,
+    /**
+     * Malformed request.
+     */
+    kBadRequest = 2,
+    /**
+     * Unknown or revoked application session.
+     */
+    kUnknownApp = 3,
+    /**
+     * User declined the request.
+     */
+    kUserDeclined = 4,
+    /**
+     * Wallet does not implement the method or shape.
+     */
+    kMethodNotSupported = 5
+};
+
+
+/**
+ * States whether the same operation can be retried safely.
+ */
+enum class RetryAdvice: int32_t {
+    /**
+     * Do not retry the operation without a user or configuration change.
+     */
+    kNone = 1,
+    /**
+     * The same read-only operation can be retried.
+     */
+    kSafe = 2,
+    /**
+     * Retry after [`DomainError::retry_after_ms`].
+     */
+    kAfterDelay = 3
+};
+
+
+/**
+ * A stable machine-readable domain error code.
+ */
+enum class ErrorCode: int32_t {
+    /**
+     * The provider response did not match the expected schema.
+     */
+    kInvalidProviderResponse = 1,
+    /**
+     * The provider returned an HTTP or protocol rejection.
+     */
+    kHttpRejected = 2,
+    /**
+     * The provider applied a request limit.
+     */
+    kRateLimited = 3,
+    /**
+     * The host reported a transport failure.
+     */
+    kTransportFailed = 4,
+    /**
+     * The host cancelled the request.
+     */
+    kHostCancelled = 5,
+    /**
+     * The response exceeded a configured bound.
+     */
+    kResponseTooLarge = 6,
+    /**
+     * The request violated a host security policy.
+     */
+    kHostPolicyViolation = 7
+};
+
+
+/**
+ * An opaque reference to recovery words in host protected storage.
+ */
+struct ProtectedSecretRef {
+    /**
+     * The host storage key. The value does not contain secret bytes.
+     */
+    std::string value;
 };
 
 namespace uniffi {
@@ -820,71 +804,174 @@ private:
 
 
 /**
- * A stable machine-readable domain error code.
+ * Classifies a failure reported by the HTTP host.
  */
-enum class ErrorCode: int32_t {
+enum class HttpHostErrorKind: int32_t {
     /**
-     * The provider response did not match the expected schema.
+     * No network connection is available.
      */
-    kInvalidProviderResponse = 1,
+    kOffline = 1,
     /**
-     * The provider returned an HTTP or protocol rejection.
+     * The request exceeded a host timeout.
      */
-    kHttpRejected = 2,
+    kTimeout = 2,
     /**
-     * The provider applied a request limit.
+     * An established connection ended before completion.
      */
-    kRateLimited = 3,
+    kConnectionLost = 3,
     /**
-     * The host reported a transport failure.
+     * DNS resolution failed.
      */
-    kTransportFailed = 4,
+    kDns = 4,
     /**
-     * The host cancelled the request.
+     * TLS negotiation or certificate validation failed.
      */
-    kHostCancelled = 5,
-    /**
-     * The response exceeded a configured bound.
-     */
-    kResponseTooLarge = 6,
+    kTls = 5,
     /**
      * The request violated a host security policy.
      */
-    kHostPolicyViolation = 7
+    kPolicyViolation = 6,
+    /**
+     * The response exceeded a limit imposed by the host.
+     */
+    kResponseTooLarge = 7,
+    /**
+     * The host cancelled the request.
+     */
+    kCancelled = 8,
+    /**
+     * The failure does not match another kind.
+     */
+    kOther = 9
+};
+
+namespace uniffi {
+struct FfiConverterTonAddressFormat;
+} // namespace uniffi
+
+/**
+ * Selects a raw representation or a user-friendly representation with flags.
+ */
+struct TonAddressFormat {
+    friend uniffi::FfiConverterTonAddressFormat;
+    /**
+     * `workchain:64-hex` without display or network flags.
+     */
+    struct kRaw {
+    };
+    /**
+     * TEP-2 user-friendly Base64 with a checksum and display flags.
+     */
+    struct kUserFriendly {
+        /**
+         * Whether senders should use a bounceable internal message.
+         */
+        bool bounceable;
+        /**
+         * Whether mainnet applications must reject the address.
+         */
+        bool testnet;
+    };
+    TonAddressFormat(kRaw variant): variant(variant) {}
+    TonAddressFormat(kUserFriendly variant): variant(variant) {}
+
+    TonAddressFormat(const TonAddressFormat &other): variant(other.variant) {}
+    TonAddressFormat(TonAddressFormat &&other): variant(std::move(other.variant)) {}
+
+    TonAddressFormat &operator=(const TonAddressFormat &other) {
+        variant = other.variant;
+        return *this;
+    }
+
+    TonAddressFormat &operator=(TonAddressFormat &&other) {
+        variant = std::move(other.variant);
+        return *this;
+    }
+
+    /**
+     * Returns the variant of this enum
+     */
+    const std::variant<kRaw, kUserFriendly> &get_variant() const {
+        return variant;
+    }
+
+private:
+    std::variant<kRaw, kUserFriendly> variant;
+
+    TonAddressFormat();
 };
 
 
 /**
- * States whether the same operation can be retried safely.
+ * The lifecycle state of a TON account.
  */
-enum class RetryAdvice: int32_t {
+enum class AccountStatus: int32_t {
     /**
-     * Do not retry the operation without a user or configuration change.
+     * No account exists at the address.
      */
-    kNone = 1,
+    kNonexistent = 1,
     /**
-     * The same read-only operation can be retried.
+     * The account exists but its contract state is not initialized.
      */
-    kSafe = 2,
+    kUninitialized = 2,
     /**
-     * Retry after [`DomainError::retry_after_ms`].
+     * The account contract is active.
      */
-    kAfterDelay = 3
+    kActive = 3,
+    /**
+     * The account contract is frozen.
+     */
+    kFrozen = 4,
+    /**
+     * The provider returned an unrecognized account state.
+     */
+    kUnknown = 5
 };
 
 
 /**
- * Selects the TON network used for addresses, providers, and wallet derivation.
+ * Why a durable outgoing message cannot yet be resolved to a final outcome.
  */
-enum class Network: int32_t {
+enum class PendingReason: int32_t {
     /**
-     * The production TON network.
+     * Toncenter still exposes an emulated pending transaction for the message.
      */
-    kMainnet = 1,
+    kInMempool = 1,
     /**
-     * The public TON test network.
+     * No terminal evidence exists and the signed validity window is still open.
      */
-    kTestnet = 2
+    kAwaitingWindow = 2
+};
+
+
+/**
+ * Classifies a protected-storage failure reported by the host.
+ */
+enum class ProtectedSecretHostErrorKind: int32_t {
+    /**
+     * No secret exists for the reference.
+     */
+    kNotFound = 1,
+    /**
+     * User or device authentication failed.
+     */
+    kAuthenticationFailed = 2,
+    /**
+     * The user or host cancelled the operation.
+     */
+    kCancelled = 3,
+    /**
+     * Protected storage is temporarily unavailable.
+     */
+    kUnavailable = 4,
+    /**
+     * The request violates a platform security policy.
+     */
+    kPolicyViolation = 5,
+    /**
+     * The failure does not match another kind.
+     */
+    kOther = 6
 };
 
 
@@ -932,93 +1019,6 @@ enum class SecretAccessReason: int32_t {
 
 
 /**
- * One opaque versioned journal value owned by the engine.
- */
-struct JournalRecord {
-    /**
-     * The positive compare-and-swap version.
-     */
-    uint64_t version;
-    /**
-     * The opaque engine payload. The host must preserve these bytes exactly.
-     */
-    std::vector<uint8_t> payload;
-};
-
-
-/**
- * Selects one durable journal slot for one wallet record.
- */
-struct JournalKey {
-    /**
-     * The stable application record identifier.
-     */
-    std::string record_id;
-    /**
-     * The engine-defined slot name.
-     */
-    std::string slot;
-};
-
-
-/**
- * Why a durable outgoing message cannot yet be resolved to a final outcome.
- */
-enum class PendingReason: int32_t {
-    /**
-     * Toncenter still exposes an emulated pending transaction for the message.
-     */
-    kInMempool = 1,
-    /**
-     * No terminal evidence exists and the signed validity window is still open.
-     */
-    kAwaitingWindow = 2
-};
-
-
-/**
- * The current state of one independently loaded resource.
- */
-enum class ResourcePhase: int32_t {
-    /**
-     * No load is active and no successful value is available yet.
-     */
-    kIdle = 1,
-    /**
-     * A load is active.
-     */
-    kLoading = 2,
-    /**
-     * The latest load for this resource succeeded.
-     */
-    kReady = 3,
-    /**
-     * The latest load for this resource failed.
-     */
-    kFailed = 4
-};
-
-
-/**
- * The on-chain result of the transaction or internal message.
- */
-enum class ActivityStatus: int32_t {
-    /**
-     * The transaction completed and this message was not a bounce.
-     */
-    kSuccess = 1,
-    /**
-     * The transaction was aborted while processing the message.
-     */
-    kFailed = 2,
-    /**
-     * The internal message has the on-chain `bounced` flag.
-     */
-    kBounced = 3
-};
-
-
-/**
  * The broad source of a provider or host error.
  */
 enum class ErrorCategory: int32_t {
@@ -1042,259 +1042,6 @@ enum class ErrorCategory: int32_t {
      * The host rejected the request because of a security or size policy.
      */
     kHostPolicy = 5
-};
-
-
-/**
- * A request to store secret bytes in platform protected storage.
- */
-struct ProtectedSecretStore {
-    /**
-     * The host storage key.
-     */
-    ProtectedSecretRef secret_ref;
-    /**
-     * The mnemonic bytes. The host must not log or persist them outside protected storage.
-     */
-    std::vector<uint8_t> bytes;
-    /**
-     * Whether later reads must require user presence or device authentication.
-     */
-    bool require_user_presence;
-};
-
-
-/**
- * Requests durable submission of an already signed external wallet message.
- *
- * `seqno` and `valid_until` must be the exact values covered by `signed_boc`.
- * They let the engine reconcile an ambiguous submission without parsing a
- * wallet-version-specific body.
- */
-struct SendBocRequest {
-    /**
-     * A unique idempotency identifier chosen by the application.
-     */
-    NonEmptyString operation_id;
-    /**
-     * Allows this submission to replace an unresolved durable send after confirmation.
-     */
-    bool force;
-    /**
-     * The complete signed external-message BOC.
-     */
-    Boc signed_boc;
-    /**
-     * The wallet sequence number covered by the signed message.
-     */
-    uint32_t seqno;
-    /**
-     * The Unix expiration timestamp covered by the signed message.
-     */
-    uint64_t valid_until;
-};
-
-
-/**
- * The latest parsed balance and status for a wallet account.
- */
-struct AccountSnapshot {
-    /**
-     * The exact account balance, in nanograms.
-     */
-    UnsignedDecimalString balance_nanograms;
-    /**
-     * The account lifecycle state.
-     */
-    AccountStatus status;
-    /**
-     * The provider synchronization time as a Unix timestamp.
-     */
-    uint64_t sync_utime;
-};
-
-
-/**
- * A request to read and authorize access to protected secret bytes.
- */
-struct ProtectedSecretRead {
-    /**
-     * The host storage key.
-     */
-    ProtectedSecretRef secret_ref;
-    /**
-     * The operation that needs secret access.
-     */
-    SecretAccessReason reason;
-    /**
-     * User-facing authentication text supplied by Rust.
-     */
-    std::string prompt;
-};
-
-
-/**
- * Parsed TON address identity and any flags carried by its input representation.
- */
-struct TonAddressInfo {
-    /**
-     * Canonical lowercase `workchain:64-hex` account identity.
-     */
-    std::string raw;
-    /**
-     * Signed workchain identifier from the address.
-     */
-    int32_t workchain;
-    /**
-     * Representation and flags used by the parsed input.
-     */
-    TonAddressFormat format;
-};
-
-
-/**
- * One nonzero incoming or outgoing value transfer in wallet activity.
- */
-struct ActivityItem {
-    /**
-     * A stable item key derived from the transaction, direction, and message index.
-     */
-    std::string id;
-    /**
-     * The transaction hash in standard padded Base64.
-     */
-    Base64Hash transaction_hash;
-    /**
-     * The transaction logical time.
-     */
-    UnsignedDecimalString logical_time;
-    /**
-     * The transaction Unix timestamp.
-     */
-    uint64_t timestamp;
-    /**
-     * The value flow direction relative to this wallet.
-     */
-    ActivityDirection direction;
-    /**
-     * The exact transferred value, in nanograms.
-     */
-    UnsignedDecimalString amount_nanograms;
-    /**
-     * The total fee charged by this transaction, in nanograms.
-     *
-     * A transaction with multiple visible messages repeats this value on each
-     * activity item; callers must not sum it per row.
-     */
-    UnsignedDecimalString transaction_fee_nanograms;
-    /**
-     * The on-chain execution status for this message and transaction.
-     */
-    ActivityStatus status;
-    /**
-     * A decoded zero-opcode plaintext comment, including an empty comment.
-     */
-    std::optional<std::string> comment;
-    /**
-     * An opaque encrypted-comment body that can be passed to
-     * [`crate::WalletClient::decrypt_comment`].
-     *
-     * A sender encrypts to the signing key this wallet had at that time.
-     * Decryption tries the current signing key and the anchor key first, then
-     * signing keys that earlier rotations replaced, which it recovers from the
-     * wallet's public key-change history.
-     */
-    std::optional<Boc> encrypted_comment;
-    /**
-     * The source or destination address, if the provider supplies it.
-     */
-    std::optional<TonAddressString> counterparty;
-};
-
-
-/**
- * An atomic compare-and-swap request for a journal slot.
- */
-struct JournalCompareExchange {
-    /**
-     * The journal slot to change.
-     */
-    JournalKey key;
-    /**
-     * The required current version, or `None` when the slot must be absent.
-     */
-    std::optional<uint64_t> expected_version;
-    /**
-     * The complete replacement value.
-     */
-    JournalRecord replacement;
-};
-
-
-/**
- * Requests a ready-to-send TON encrypted-comment body.
- *
- * The engine uses the supplied recipient public key or loads it from chain
- * state, then asks the platform host to authorize access to this wallet's
- * protected mnemonic.
- */
-struct CreateEncryptedCommentRequest {
-    /**
-     * Recipient wallet address. Must expose `get_public_key` when no key is supplied.
-     */
-    TonAddressString recipient;
-    /**
-     * UTF-8 comment to encrypt. Its encoded form must not exceed 960 bytes.
-     */
-    std::string comment;
-    /**
-     * Optional 32-byte Ed25519 public key used instead of an on-chain lookup.
-     *
-     * Used directly without deriving or checking the recipient address. The
-     * caller must supply the key used by the recipient for comment decryption.
-     */
-    std::optional<std::vector<uint8_t>> recipient_public_key = std::nullopt;
-};
-
-
-/**
- * Requests explicit decryption of one encrypted-comment message body.
- *
- * [`crate::WalletClient::decrypt_comment`] reads the protected mnemonic once
- * and tries the current signing key, then the anchor key, without any HTTP
- * request. When neither matches and the wallet has rotated its key, it reads
- * the wallet's `change_wallet_key` history from Toncenter v3, recovers each
- * earlier signing key from the encrypted old key its rotation published, and
- * tries those keys. Recovered keys never leave the call.
- */
-struct DecryptCommentRequest {
-    /**
-     * Address that sent the encrypted comment.
-     *
-     * TON binds this bounceable, URL-safe, non-test-only address to the
-     * authentication tag. For an incoming activity item this is its
-     * `counterparty`; for an outgoing item it is this wallet's address.
-     */
-    TonAddressString sender;
-    /**
-     * Complete message-body cell encoded as a Base64 BOC.
-     */
-    Boc body;
-};
-
-
-/**
- * The provider cursor for the next older activity page.
- */
-struct ActivityCursor {
-    /**
-     * The oldest loaded transaction logical time.
-     */
-    UnsignedDecimalString logical_time;
-    /**
-     * The oldest loaded transaction hash in standard padded Base64.
-     */
-    Base64Hash hash;
 };
 
 namespace uniffi {
@@ -1361,6 +1108,230 @@ private:
 
 
 /**
+ * An atomic compare-and-swap request for a journal slot.
+ */
+struct JournalCompareExchange {
+    /**
+     * The journal slot to change.
+     */
+    JournalKey key;
+    /**
+     * The required current version, or `None` when the slot must be absent.
+     */
+    std::optional<uint64_t> expected_version;
+    /**
+     * The complete replacement value.
+     */
+    JournalRecord replacement;
+};
+
+namespace uniffi {
+struct FfiConverterJournalHostError;
+} // namespace uniffi
+
+/**
+ * A durable journal failure returned by [`crate::WalletPlatformHost`].
+ */
+struct JournalHostError: std::runtime_error {
+    friend uniffi::FfiConverterJournalHostError;
+
+    JournalHostError() : std::runtime_error("") {}
+    JournalHostError(const std::string &what_arg) : std::runtime_error(what_arg) {}
+
+    virtual ~JournalHostError() = default;
+
+    virtual void throw_underlying() {
+        throw *this;
+    }
+
+protected:
+    virtual int32_t get_variant_idx() const {
+        return 0;
+    };
+};
+/**
+ * Contains variants of JournalHostError
+ */
+namespace journal_host_error {
+
+/**
+ * Reports a classified journal failure with a safe diagnostic message.
+ */
+struct Failed: JournalHostError {
+    JournalHostErrorKind kind;
+    std::string diagnostic;
+
+    Failed() : JournalHostError("") {}
+    Failed(const std::string &what_arg) : JournalHostError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 1;
+    }
+};
+} // namespace journal_host_error
+
+
+/**
+ * Parsed TON address identity and any flags carried by its input representation.
+ */
+struct TonAddressInfo {
+    /**
+     * Canonical lowercase `workchain:64-hex` account identity.
+     */
+    std::string raw;
+    /**
+     * Signed workchain identifier from the address.
+     */
+    int32_t workchain;
+    /**
+     * Representation and flags used by the parsed input.
+     */
+    TonAddressFormat format;
+};
+
+
+/**
+ * Requests creation of the data needed for Wallet rev00 key rotation.
+ */
+struct PrepareKeyRotationRequest {
+    /**
+     * Unix timestamp covered by the current key's request signature.
+     */
+    uint64_t valid_until;
+    /**
+     * Delivery channel and channel-specific request opcode.
+     */
+    KeyRotationMessageKind message_kind;
+};
+
+
+/**
+ * One nonzero incoming or outgoing value transfer in wallet activity.
+ */
+struct ActivityItem {
+    /**
+     * A stable item key derived from the transaction, direction, and message index.
+     */
+    std::string id;
+    /**
+     * The transaction hash in standard padded Base64.
+     */
+    Base64Hash transaction_hash;
+    /**
+     * The transaction logical time.
+     */
+    UnsignedDecimalString logical_time;
+    /**
+     * The transaction Unix timestamp.
+     */
+    uint64_t timestamp;
+    /**
+     * The value flow direction relative to this wallet.
+     */
+    ActivityDirection direction;
+    /**
+     * The exact transferred value, in nanograms.
+     */
+    UnsignedDecimalString amount_nanograms;
+    /**
+     * The total fee charged by this transaction, in nanograms.
+     *
+     * A transaction with multiple visible messages repeats this value on each
+     * activity item; callers must not sum it per row.
+     */
+    UnsignedDecimalString transaction_fee_nanograms;
+    /**
+     * The on-chain execution status for this message and transaction.
+     */
+    ActivityStatus status;
+    /**
+     * A decoded zero-opcode plaintext comment, including an empty comment.
+     */
+    std::optional<std::string> comment;
+    /**
+     * An opaque encrypted-comment body that can be passed to
+     * [`crate::WalletClient::decrypt_comment`].
+     *
+     * A sender encrypts to the signing key this wallet had at that time.
+     * Decryption tries the current signing key and the anchor key first, then
+     * signing keys that earlier rotations replaced, which it recovers from the
+     * wallet's public key-change history.
+     */
+    std::optional<Boc> encrypted_comment;
+    /**
+     * The source or destination address, if the provider supplies it.
+     */
+    std::optional<TonAddressString> counterparty;
+};
+
+
+/**
+ * The result returned after the send workflow reaches a terminal phase.
+ */
+struct SendResult {
+    /**
+     * The application operation identifier.
+     */
+    NonEmptyString operation_id;
+    /**
+     * The normalized signed external-message hash in standard padded Base64.
+     */
+    Base64Hash message_hash;
+    /**
+     * The exact signed external-message `BoC` submitted to the provider.
+     */
+    Boc signed_boc;
+    /**
+     * The terminal phase. This can be [`SendPhase::SubmissionUnknown`].
+     */
+    SendPhase phase;
+};
+
+
+/**
+ * Structured error data for account and activity resources.
+ */
+struct DomainError {
+    /**
+     * The stable machine-readable code.
+     */
+    ErrorCode code;
+    /**
+     * The broad source of the error.
+     */
+    ErrorCategory category;
+    /**
+     * Retry guidance for the failed operation.
+     */
+    RetryAdvice retry;
+    /**
+     * A sanitized developer-facing diagnostic with a bounded length.
+     */
+    std::string developer_message;
+    /**
+     * The provider status code, if the provider returned one.
+     */
+    std::optional<uint16_t> provider_status;
+    /**
+     * The provider delay in milliseconds, if it returned a numeric `Retry-After` header.
+     */
+    std::optional<uint64_t> retry_after_ms;
+    /**
+     * The normalized host failure kind, if the error came from a callback.
+     *
+     * Status-less host kinds map to the corresponding legacy HTTP kind so
+     * existing consumers retain one stable classification field.
+     */
+    std::optional<HttpHostErrorKind> host_kind;
+};
+
+
+/**
  * One high-level action recognized by Toncenter during emulation.
  *
  * `details_json` preserves action-specific fields without making the stable
@@ -1395,87 +1366,60 @@ struct SendEmulationAction {
 
 
 /**
- * A complete HTTP request for the embedding language.
- *
- * The host can add its Toncenter credential according to the actual request
- * URL and its local security policy. Redirects are forbidden.
+ * A `signData` request already validated against the session's wallet.
  */
-struct HttpRequest {
+struct TonConnectSignDataRequest {
     /**
-     * The identifier used for host cancellation.
+     * The data to show and sign.
      */
-    HttpRequestId id;
+    TonConnectSignDataPayload payload;
     /**
-     * The request method.
+     * The network global ID the dApp named, exactly as sent; it matches the wallet.
      */
-    HttpMethod method;
+    std::optional<std::string> network;
     /**
-     * The complete HTTPS request URL.
+     * The signer address the dApp named, exactly as sent; it is the wallet's address.
      */
-    std::string url;
-    /**
-     * The public request headers. Credential material is not present here.
-     */
-    std::vector<HttpHeader> headers;
-    /**
-     * The request body. GET requests use an empty body.
-     */
-    std::vector<uint8_t> body;
-    /**
-     * End-to-end request timeout, in milliseconds.
-     *
-     * The host must enforce this deadline across connection setup, response
-     * headers, and response-body reads. Expiry is reported as
-     * [`HttpHostErrorKind::Timeout`].
-     */
-    uint64_t timeout_ms;
+    std::optional<std::string> from;
 };
 
 namespace uniffi {
-struct FfiConverterNftTransferPayload;
+struct FfiConverterNftTransferFunding;
 } // namespace uniffi
 
 /**
- * Optional payload delivered to the new owner with `ownership_assigned`.
+ * The TON amounts used to execute one NFT item transfer.
+ *
+ * Both values are deliberately explicit. The engine does not choose a gas
+ * deposit or recipient notification amount on behalf of the application.
  */
-struct NftTransferPayload {
-    friend uniffi::FfiConverterNftTransferPayload;
+struct NftTransferFunding {
+    friend uniffi::FfiConverterNftTransferFunding;
     /**
-     * Use an empty forward payload.
+     * Attach an exact amount to the NFT item call and forward an exact amount
+     * with the ownership notification.
      */
-    struct kEmpty {
-    };
-    /**
-     * Encode a zero opcode followed by UTF-8 TON snake data.
-     */
-    struct kComment {
+    struct kExact {
         /**
-         * Plaintext comment delivered to the new owner.
+         * Value attached to the internal message sent to the NFT item contract.
          */
-        std::string text;
-    };
-    /**
-     * Preserve one caller-built cell as the forward payload.
-     */
-    struct kRawPayload {
+        UnsignedDecimalString attached_nanograms;
         /**
-         * Complete payload cell encoded as a validated BOC.
+         * Value forwarded to the new owner in `ownership_assigned`.
          */
-        Boc boc;
+        UnsignedDecimalString forward_nanograms;
     };
-    NftTransferPayload(kEmpty variant): variant(variant) {}
-    NftTransferPayload(kComment variant): variant(variant) {}
-    NftTransferPayload(kRawPayload variant): variant(variant) {}
+    NftTransferFunding(kExact variant): variant(variant) {}
 
-    NftTransferPayload(const NftTransferPayload &other): variant(other.variant) {}
-    NftTransferPayload(NftTransferPayload &&other): variant(std::move(other.variant)) {}
+    NftTransferFunding(const NftTransferFunding &other): variant(other.variant) {}
+    NftTransferFunding(NftTransferFunding &&other): variant(std::move(other.variant)) {}
 
-    NftTransferPayload &operator=(const NftTransferPayload &other) {
+    NftTransferFunding &operator=(const NftTransferFunding &other) {
         variant = other.variant;
         return *this;
     }
 
-    NftTransferPayload &operator=(NftTransferPayload &&other) {
+    NftTransferFunding &operator=(NftTransferFunding &&other) {
         variant = std::move(other.variant);
         return *this;
     }
@@ -1483,45 +1427,243 @@ struct NftTransferPayload {
     /**
      * Returns the variant of this enum
      */
-    const std::variant<kEmpty, kComment, kRawPayload> &get_variant() const {
+    const std::variant<kExact> &get_variant() const {
         return variant;
     }
 
 private:
-    std::variant<kEmpty, kComment, kRawPayload> variant;
+    std::variant<kExact> variant;
 
-    NftTransferPayload();
+    NftTransferFunding();
 };
 
 
 /**
- * Two signed delivery forms prepared from the same wallet state.
- *
- * Both BOCs cover the same `seqno` and `valid_until`, so they are alternative
- * representations of one transfer. The caller must hand off only the delivery
- * form selected by its server. This result is not written to the send journal.
+ * A durable owner-signed internal message returned to its caller for relaying.
  */
-struct PreparedTransfer {
+struct SignMessageResult {
     /**
      * The application operation identifier.
      */
     NonEmptyString operation_id;
     /**
-     * Complete incoming external message for direct provider submission.
-     */
-    Boc external_boc;
-    /**
-     * Complete owner-signed internal message for a gas-paying relayer.
+     * The complete relaxed internal message encoded as a validated BOC.
      */
     Boc internal_boc;
     /**
-     * Fresh wallet sequence number covered by both signed messages.
-     */
-    uint32_t seqno;
-    /**
-     * Unix expiration timestamp covered by both signed messages.
+     * The Unix expiration timestamp covered by the signature.
      */
     uint64_t valid_until;
+    /**
+     * The durable workflow phase after the message becomes available to the caller.
+     */
+    SendPhase phase;
+};
+
+
+/**
+ * Asks which public key a TON encrypted comment for a recipient would use.
+ *
+ * The fields mean the same as in [`CreateEncryptedCommentRequest`], so the
+ * answer predicts whether that request can encrypt, without a comment and
+ * without any protected-secret access.
+ */
+struct EncryptedCommentRecipientRequest {
+    /**
+     * Recipient wallet address.
+     */
+    TonAddressString recipient;
+    /**
+     * Optional 32-byte Ed25519 public key used instead of an on-chain lookup.
+     *
+     * The host authenticates it as described by
+     * [`CreateEncryptedCommentRequest::recipient_public_key`].
+     */
+    std::optional<std::vector<uint8_t>> recipient_public_key = std::nullopt;
+};
+
+namespace uniffi {
+struct FfiConverterSendAmount;
+} // namespace uniffi
+
+/**
+ * The transfer value policy applied by the wallet contract.
+ */
+struct SendAmount {
+    friend uniffi::FfiConverterSendAmount;
+    /**
+     * Send one exact nonnegative value and pay network fees separately.
+     */
+    struct kExact {
+        /**
+         * The exact value, in nanograms.
+         */
+        UnsignedDecimalString nanograms;
+    };
+    /**
+     * Send the complete remaining wallet balance after network fees.
+     */
+    struct kAll {
+    };
+    SendAmount(kExact variant): variant(variant) {}
+    SendAmount(kAll variant): variant(variant) {}
+
+    SendAmount(const SendAmount &other): variant(other.variant) {}
+    SendAmount(SendAmount &&other): variant(std::move(other.variant)) {}
+
+    SendAmount &operator=(const SendAmount &other) {
+        variant = other.variant;
+        return *this;
+    }
+
+    SendAmount &operator=(SendAmount &&other) {
+        variant = std::move(other.variant);
+        return *this;
+    }
+
+    /**
+     * Returns the variant of this enum
+     */
+    const std::variant<kExact, kAll> &get_variant() const {
+        return variant;
+    }
+
+private:
+    std::variant<kExact, kAll> variant;
+
+    SendAmount();
+};
+
+
+/**
+ * Configures the Toncenter endpoint.
+ */
+struct ProviderConfig {
+    /**
+     * The HTTPS base URL for a Toncenter-compatible provider.
+     *
+     * The engine appends the path for the API used by each request. An optional
+     * deployment prefix is preserved, so `https://provider.example/toncenter`
+     * produces paths below `/toncenter/api/...`.
+     * Loopback HTTP URLs are accepted for local development networks.
+     * Supply an already serialized ASCII URL, with any path escaping applied
+     * and no credentials, query, or fragment. The engine does not normalize it.
+     */
+    std::string toncenter_base_url;
+    /**
+     * Optional TON DNS root resolver override.
+     *
+     * When absent, the engine selects the built-in current root for the wallet
+     * network. Set an explicit address to update the resolver without changing
+     * the engine.
+     */
+    std::optional<TonAddressString> dns_root_address;
+    /**
+     * End-to-end timeout applied to every provider request, in milliseconds.
+     *
+     * The selected provider host must enforce this deadline across its
+     * complete HTTP, relay, or protocol-proxy call.
+     */
+    uint64_t request_timeout_ms;
+};
+
+
+/**
+ * A secret-bearing one-shot command. It must never be persisted or logged.
+ *
+ * The words cross FFI because the user enters them. Rust validates and derives
+ * the wallet. The host only provides protected storage.
+ */
+struct ImportWalletRequest {
+    /**
+     * The stable application record identifier for the imported wallet.
+     */
+    std::string record_id;
+    /**
+     * The network used to derive the wallet contract and address.
+     */
+    Network network;
+    /**
+     * Lowercase English words of a rotation mnemonic (TEP-0003 section 3.3).
+     *
+     * Pass the phrase exactly as the user recorded it: 12 words for a wallet
+     * whose key was never rotated, or 24 words - two independently
+     * checksummed BIP-39 halves - after rotation. The engine expands the
+     * 12-word form itself; never duplicate the words in the application.
+     *
+     * [`detect_mnemonic_schemes`] classifies the same word vector without
+     * importing it, so the application can explain a rejection.
+     */
+    std::vector<std::string> recovery_words;
+};
+
+namespace uniffi {
+struct FfiConverterHttpHostError;
+} // namespace uniffi
+
+/**
+ * An HTTP failure returned by [`WalletHttpHost`].
+ */
+struct HttpHostError: std::runtime_error {
+    friend uniffi::FfiConverterHttpHostError;
+
+    HttpHostError() : std::runtime_error("") {}
+    HttpHostError(const std::string &what_arg) : std::runtime_error(what_arg) {}
+
+    virtual ~HttpHostError() = default;
+
+    virtual void throw_underlying() {
+        throw *this;
+    }
+
+protected:
+    virtual int32_t get_variant_idx() const {
+        return 0;
+    };
+};
+/**
+ * Contains variants of HttpHostError
+ */
+namespace http_host_error {
+
+/**
+ * Reports a classified host failure with a safe diagnostic message.
+ */
+struct Failed: HttpHostError {
+    HttpHostErrorKind kind;
+    std::string diagnostic;
+
+    Failed() : HttpHostError("") {}
+    Failed(const std::string &what_arg) : HttpHostError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 1;
+    }
+};
+} // namespace http_host_error
+
+
+/**
+ * A request to read and authorize access to protected secret bytes.
+ */
+struct ProtectedSecretRead {
+    /**
+     * The host storage key.
+     */
+    ProtectedSecretRef secret_ref;
+    /**
+     * The operation that needs secret access.
+     */
+    SecretAccessReason reason;
+    /**
+     * User-facing authentication text supplied by Rust.
+     */
+    std::string prompt;
 };
 
 namespace uniffi {
@@ -1578,93 +1720,71 @@ private:
 
 
 /**
- * Host-owned subset of the TypeScript protocol's `DeviceInfo`.
+ * Requests explicit decryption of one encrypted-comment message body.
  *
- * Rust fills `maxProtocolVersion` and `features` from the methods the engine
- * actually implements, so platform clients cannot advertise unsupported
- * capabilities.
+ * [`crate::WalletClient::decrypt_comment`] reads the protected mnemonic once
+ * and tries the current signing key, then the anchor key, without any HTTP
+ * request. When neither matches and the wallet has rotated its key, it reads
+ * the wallet's `change_wallet_key` history from Toncenter v3, recovers each
+ * earlier signing key from the encrypted old key its rotation published, and
+ * tries those keys. Recovered keys never leave the call.
  */
-struct TonConnectDevice {
+struct DecryptCommentRequest {
     /**
-     * Current wallet runtime platform.
-     */
-    TonConnectDevicePlatform platform;
-    /**
-     * Wallet registry identifier.
-     */
-    std::string app_name;
-    /**
-     * Wallet application version.
-     */
-    std::string app_version;
-};
-
-
-/**
- * Requests creation of the data needed for Wallet rev00 key rotation.
- */
-struct PrepareKeyRotationRequest {
-    /**
-     * Unix timestamp covered by the current key's request signature.
-     */
-    uint64_t valid_until;
-    /**
-     * Delivery channel and channel-specific request opcode.
-     */
-    KeyRotationMessageKind message_kind;
-};
-
-
-/**
- * A secret-bearing one-shot command. It must never be persisted or logged.
- *
- * The words cross FFI because the user enters them. Rust validates and derives
- * the wallet. The host only provides protected storage.
- */
-struct ImportWalletRequest {
-    /**
-     * The stable application record identifier for the imported wallet.
-     */
-    std::string record_id;
-    /**
-     * The network used to derive the wallet contract and address.
-     */
-    Network network;
-    /**
-     * Lowercase English words of a rotation mnemonic (TEP-0003 section 3.3).
+     * Address that sent the encrypted comment.
      *
-     * Pass the phrase exactly as the user recorded it: 12 words for a wallet
-     * whose key was never rotated, or 24 words - two independently
-     * checksummed BIP-39 halves - after rotation. The engine expands the
-     * 12-word form itself; never duplicate the words in the application.
-     *
-     * [`detect_mnemonic_schemes`] classifies the same word vector without
-     * importing it, so the application can explain a rejection.
+     * TON binds this bounceable, URL-safe, non-test-only address to the
+     * authentication tag. For an incoming activity item this is its
+     * `counterparty`; for an outgoing item it is this wallet's address.
      */
-    std::vector<std::string> recovery_words;
+    TonAddressString sender;
+    /**
+     * Complete message-body cell encoded as a Base64 BOC.
+     */
+    Boc body;
 };
 
 
 /**
- * The result returned after the send workflow reaches a terminal phase.
+ * The complete HTTP response returned by the host.
  */
-struct SendResult {
+struct HttpResponse {
     /**
-     * The application operation identifier.
+     * The HTTP status code.
      */
-    NonEmptyString operation_id;
+    uint16_t status;
     /**
-     * The normalized signed external-message hash in standard padded Base64.
+     * The response headers accepted by the host.
      */
-    Base64Hash message_hash;
+    std::vector<HttpHeader> headers;
     /**
-     * The exact signed external-message `BoC` submitted to the provider.
+     * The response body accepted by the host.
      */
-    Boc signed_boc;
+    std::vector<uint8_t> body;
     /**
-     * The terminal phase. This can be [`SendPhase::SubmissionUnknown`].
+     * The final response URL reported by the host. It must equal the request URL
+     * because the engine does not permit redirects.
      */
-    SendPhase phase;
+    std::string final_url;
+};
+
+
+/**
+ * The latest parsed balance and status for a wallet account.
+ */
+struct AccountSnapshot {
+    /**
+     * The exact account balance, in nanograms.
+     */
+    UnsignedDecimalString balance_nanograms;
+    /**
+     * The account lifecycle state.
+     */
+    AccountStatus status;
+    /**
+     * The provider synchronization time as a Unix timestamp.
+     */
+    uint64_t sync_utime;
 };
 
 
@@ -1695,30 +1815,6 @@ struct NftCollectionDescriptor {
      * All string-valued collection metadata returned by the provider.
      */
     std::unordered_map<std::string, std::string> content;
-};
-
-
-/**
- * The complete HTTP response returned by the host.
- */
-struct HttpResponse {
-    /**
-     * The HTTP status code.
-     */
-    uint16_t status;
-    /**
-     * The response headers accepted by the host.
-     */
-    std::vector<HttpHeader> headers;
-    /**
-     * The response body accepted by the host.
-     */
-    std::vector<uint8_t> body;
-    /**
-     * The final response URL reported by the host. It must equal the request URL
-     * because the engine does not permit redirects.
-     */
-    std::string final_url;
 };
 
 namespace uniffi {
@@ -1786,87 +1882,23 @@ private:
     SendMessageBody();
 };
 
-namespace uniffi {
-struct FfiConverterProtectedSecretHostError;
-} // namespace uniffi
 
 /**
- * A protected-storage failure returned by [`crate::WalletPlatformHost`].
+ * One account transaction observed in an emulated message trace.
  */
-struct ProtectedSecretHostError: std::runtime_error {
-    friend uniffi::FfiConverterProtectedSecretHostError;
-
-    ProtectedSecretHostError() : std::runtime_error("") {}
-    ProtectedSecretHostError(const std::string &what_arg) : std::runtime_error(what_arg) {}
-
-    virtual ~ProtectedSecretHostError() = default;
-
-    virtual void throw_underlying() {
-        throw *this;
-    }
-
-protected:
-    virtual int32_t get_variant_idx() const {
-        return 0;
-    };
-};
-/**
- * Contains variants of ProtectedSecretHostError
- */
-namespace protected_secret_host_error {
-
-/**
- * Reports a classified host failure with a safe diagnostic message.
- */
-struct Failed: ProtectedSecretHostError {
-    ProtectedSecretHostErrorKind kind;
-    std::string diagnostic;
-
-    Failed() : ProtectedSecretHostError("") {}
-    Failed(const std::string &what_arg) : ProtectedSecretHostError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 1;
-    }
-};
-} // namespace protected_secret_host_error
-
-
-/**
- * Configures the Toncenter endpoint.
- */
-struct ProviderConfig {
+struct SendEmulationTransaction {
     /**
-     * The HTTPS base URL for a Toncenter-compatible provider.
-     *
-     * The engine appends the path for the API used by each request. An optional
-     * deployment prefix is preserved, so `https://provider.example/toncenter`
-     * produces paths below `/toncenter/api/...`.
-     * Loopback HTTP URLs are accepted for local development networks.
-     * Supply an already serialized ASCII URL, with any path escaping applied
-     * and no credentials, query, or fragment. The engine does not normalize it.
+     * Account whose contract executed this transaction.
      */
-    std::string toncenter_base_url;
+    TonAddressString account;
     /**
-     * Optional TON DNS root resolver override.
-     *
-     * When absent, the engine selects the built-in current root for the wallet
-     * network. Set an explicit address to update the resolver without changing
-     * the engine.
+     * Whether the observed compute and action phases contain no explicit failure.
      */
-    std::optional<TonAddressString> dns_root_address;
+    bool succeeded;
     /**
-     * End-to-end timeout applied to every provider request, in milliseconds.
-     *
-     * The selected provider host must enforce this deadline across its
-     * complete HTTP, relay, or protocol-proxy call.
+     * Whether this is the source wallet transaction at the root of the trace.
      */
-    uint64_t request_timeout_ms;
+    bool is_root;
 };
 
 
@@ -1882,6 +1914,115 @@ struct CreateWalletRequest {
      * The network used to derive the wallet contract and address.
      */
     Network network;
+};
+
+
+/**
+ * A complete HTTP request for the embedding language.
+ *
+ * The host can add its Toncenter credential according to the actual request
+ * URL and its local security policy. Redirects are forbidden.
+ */
+struct HttpRequest {
+    /**
+     * The identifier used for host cancellation.
+     */
+    HttpRequestId id;
+    /**
+     * The request method.
+     */
+    HttpMethod method;
+    /**
+     * The complete HTTPS request URL.
+     */
+    std::string url;
+    /**
+     * The public request headers. Credential material is not present here.
+     */
+    std::vector<HttpHeader> headers;
+    /**
+     * The request body. GET requests use an empty body.
+     */
+    std::vector<uint8_t> body;
+    /**
+     * End-to-end request timeout, in milliseconds.
+     *
+     * The host must enforce this deadline across connection setup, response
+     * headers, and response-body reads. Expiry is reported as
+     * [`HttpHostErrorKind::Timeout`].
+     */
+    uint64_t timeout_ms;
+};
+
+
+/**
+ * One-shot data prepared for a Wallet rev00 signing-key rotation.
+ *
+ * This value does not mean that rotation succeeded on-chain. Before
+ * submission, the host must store `replacement_recovery_phrase` in protected
+ * storage. It must store `signed_boc` as a pending durable record. Words 13-24
+ * are the new signing half. Until chain state resolves the request, the host
+ * must block ordinary signing.
+ *
+ * The signed request also carries `encryptedOldPrivateKey`, computed over
+ * 32-byte Ed25519 seeds as
+ * `sha256(new_private_key ‖ "keyChangeSaltV1") XOR old_private_key`, where the
+ * old key is the signing key being replaced. Only the new key opens it. The
+ * contract publishes it in its key-changed log, so
+ * [`crate::WalletClient::decrypt_comment`] can later recover the replaced key.
+ * The engine adds it to `signed_boc`; the host handles nothing extra.
+ */
+struct PreparedKeyRotation {
+    /**
+     * Full 24-word phrase that preserves the anchor and contains the new signing half.
+     */
+    RecoveryPhrase replacement_recovery_phrase;
+    /**
+     * New raw 32-byte Ed25519 signing public key stored by the contract on success.
+     */
+    std::vector<uint8_t> new_public_key;
+    /**
+     * Complete external or relaxed internal signed message as a validated BOC.
+     *
+     * Its `ChangePublicKey` request holds two references: the new key's
+     * wallet-address proof signature and the encrypted old private key.
+     */
+    Boc signed_boc;
+    /**
+     * External delivery form for the same replacement key, sequence and expiration.
+     */
+    Boc external_boc;
+    /**
+     * Internal alternative; submit only one of the two delivery forms.
+     */
+    Boc internal_boc;
+    /**
+     * Sequence number covered by the signed request.
+     */
+    uint32_t seqno;
+    /**
+     * Unix expiration timestamp covered by the signed request.
+     */
+    uint64_t valid_until;
+    /**
+     * Delivery channel encoded into the request opcode.
+     */
+    KeyRotationMessageKind message_kind;
+};
+
+
+/**
+ * The provider cursor for the next older activity page.
+ */
+struct ActivityCursor {
+    /**
+     * The oldest loaded transaction logical time.
+     */
+    UnsignedDecimalString logical_time;
+    /**
+     * The oldest loaded transaction hash in standard padded Base64.
+     */
+    Base64Hash hash;
 };
 
 namespace uniffi {
@@ -2493,87 +2634,51 @@ protected:
 };
 } // namespace wallet_client_error
 
-
-/**
- * One account transaction observed in an emulated message trace.
- */
-struct SendEmulationTransaction {
-    /**
-     * Account whose contract executed this transaction.
-     */
-    TonAddressString account;
-    /**
-     * Whether the observed compute and action phases contain no explicit failure.
-     */
-    bool succeeded;
-    /**
-     * Whether this is the source wallet transaction at the root of the trace.
-     */
-    bool is_root;
-};
-
-
-/**
- * Chain evidence and retry guidance for a durable outgoing message.
- */
-struct ResolutionInfo {
-    /**
-     * The confirmed transaction hash, when the message was executed.
-     */
-    std::optional<Base64Hash> transaction_hash;
-    /**
-     * The confirmed transaction logical time.
-     */
-    std::optional<UnsignedDecimalString> transaction_lt;
-    /**
-     * Why the message remains unresolved, when no terminal evidence exists.
-     */
-    std::optional<PendingReason> pending_reason;
-    /**
-     * Whether a new send with `force` can replace this unresolved signed send.
-     */
-    bool can_force_retry;
-    /**
-     * A UI polling hint. This is not a correctness deadline.
-     */
-    std::optional<uint64_t> retry_after_hint_ms;
-};
-
 namespace uniffi {
-struct FfiConverterSendAmount;
+struct FfiConverterNftTransferPayload;
 } // namespace uniffi
 
 /**
- * The transfer value policy applied by the wallet contract.
+ * Optional payload delivered to the new owner with `ownership_assigned`.
  */
-struct SendAmount {
-    friend uniffi::FfiConverterSendAmount;
+struct NftTransferPayload {
+    friend uniffi::FfiConverterNftTransferPayload;
     /**
-     * Send one exact nonnegative value and pay network fees separately.
+     * Use an empty forward payload.
      */
-    struct kExact {
+    struct kEmpty {
+    };
+    /**
+     * Encode a zero opcode followed by UTF-8 TON snake data.
+     */
+    struct kComment {
         /**
-         * The exact value, in nanograms.
+         * Plaintext comment delivered to the new owner.
          */
-        UnsignedDecimalString nanograms;
+        std::string text;
     };
     /**
-     * Send the complete remaining wallet balance after network fees.
+     * Preserve one caller-built cell as the forward payload.
      */
-    struct kAll {
+    struct kRawPayload {
+        /**
+         * Complete payload cell encoded as a validated BOC.
+         */
+        Boc boc;
     };
-    SendAmount(kExact variant): variant(variant) {}
-    SendAmount(kAll variant): variant(variant) {}
+    NftTransferPayload(kEmpty variant): variant(variant) {}
+    NftTransferPayload(kComment variant): variant(variant) {}
+    NftTransferPayload(kRawPayload variant): variant(variant) {}
 
-    SendAmount(const SendAmount &other): variant(other.variant) {}
-    SendAmount(SendAmount &&other): variant(std::move(other.variant)) {}
+    NftTransferPayload(const NftTransferPayload &other): variant(other.variant) {}
+    NftTransferPayload(NftTransferPayload &&other): variant(std::move(other.variant)) {}
 
-    SendAmount &operator=(const SendAmount &other) {
+    NftTransferPayload &operator=(const NftTransferPayload &other) {
         variant = other.variant;
         return *this;
     }
 
-    SendAmount &operator=(SendAmount &&other) {
+    NftTransferPayload &operator=(NftTransferPayload &&other) {
         variant = std::move(other.variant);
         return *this;
     }
@@ -2581,171 +2686,14 @@ struct SendAmount {
     /**
      * Returns the variant of this enum
      */
-    const std::variant<kExact, kAll> &get_variant() const {
+    const std::variant<kEmpty, kComment, kRawPayload> &get_variant() const {
         return variant;
     }
 
 private:
-    std::variant<kExact, kAll> variant;
+    std::variant<kEmpty, kComment, kRawPayload> variant;
 
-    SendAmount();
-};
-
-namespace uniffi {
-struct FfiConverterHttpHostError;
-} // namespace uniffi
-
-/**
- * An HTTP failure returned by [`WalletHttpHost`].
- */
-struct HttpHostError: std::runtime_error {
-    friend uniffi::FfiConverterHttpHostError;
-
-    HttpHostError() : std::runtime_error("") {}
-    HttpHostError(const std::string &what_arg) : std::runtime_error(what_arg) {}
-
-    virtual ~HttpHostError() = default;
-
-    virtual void throw_underlying() {
-        throw *this;
-    }
-
-protected:
-    virtual int32_t get_variant_idx() const {
-        return 0;
-    };
-};
-/**
- * Contains variants of HttpHostError
- */
-namespace http_host_error {
-
-/**
- * Reports a classified host failure with a safe diagnostic message.
- */
-struct Failed: HttpHostError {
-    HttpHostErrorKind kind;
-    std::string diagnostic;
-
-    Failed() : HttpHostError("") {}
-    Failed(const std::string &what_arg) : HttpHostError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 1;
-    }
-};
-} // namespace http_host_error
-
-
-/**
- * Structured error data for account and activity resources.
- */
-struct DomainError {
-    /**
-     * The stable machine-readable code.
-     */
-    ErrorCode code;
-    /**
-     * The broad source of the error.
-     */
-    ErrorCategory category;
-    /**
-     * Retry guidance for the failed operation.
-     */
-    RetryAdvice retry;
-    /**
-     * A sanitized developer-facing diagnostic with a bounded length.
-     */
-    std::string developer_message;
-    /**
-     * The provider status code, if the provider returned one.
-     */
-    std::optional<uint16_t> provider_status;
-    /**
-     * The provider delay in milliseconds, if it returned a numeric `Retry-After` header.
-     */
-    std::optional<uint64_t> retry_after_ms;
-    /**
-     * The normalized host failure kind, if the error came from a callback.
-     *
-     * Status-less host kinds map to the corresponding legacy HTTP kind so
-     * existing consumers retain one stable classification field.
-     */
-    std::optional<HttpHostErrorKind> host_kind;
-};
-
-namespace uniffi {
-struct FfiConverterJournalHostError;
-} // namespace uniffi
-
-/**
- * A durable journal failure returned by [`crate::WalletPlatformHost`].
- */
-struct JournalHostError: std::runtime_error {
-    friend uniffi::FfiConverterJournalHostError;
-
-    JournalHostError() : std::runtime_error("") {}
-    JournalHostError(const std::string &what_arg) : std::runtime_error(what_arg) {}
-
-    virtual ~JournalHostError() = default;
-
-    virtual void throw_underlying() {
-        throw *this;
-    }
-
-protected:
-    virtual int32_t get_variant_idx() const {
-        return 0;
-    };
-};
-/**
- * Contains variants of JournalHostError
- */
-namespace journal_host_error {
-
-/**
- * Reports a classified journal failure with a safe diagnostic message.
- */
-struct Failed: JournalHostError {
-    JournalHostErrorKind kind;
-    std::string diagnostic;
-
-    Failed() : JournalHostError("") {}
-    Failed(const std::string &what_arg) : JournalHostError(what_arg) {}
-
-    void throw_underlying() override {
-        throw *this;
-    }
-
-protected:
-    int32_t get_variant_idx() const override {
-        return 1;
-    }
-};
-} // namespace journal_host_error
-
-
-/**
- * A `signData` request already validated against the session's wallet.
- */
-struct TonConnectSignDataRequest {
-    /**
-     * The data to show and sign.
-     */
-    TonConnectSignDataPayload payload;
-    /**
-     * The network global ID the dApp named, exactly as sent; it matches the wallet.
-     */
-    std::optional<std::string> network;
-    /**
-     * The signer address the dApp named, exactly as sent; it is the wallet's address.
-     */
-    std::optional<std::string> from;
+    NftTransferPayload();
 };
 
 
@@ -2782,40 +2730,141 @@ struct WalletDescriptor {
 
 
 /**
- * A durable owner-signed internal message returned to its caller for relaying.
+ * Two signed delivery forms prepared from the same wallet state.
+ *
+ * Both BOCs cover the same `seqno` and `valid_until`, so they are alternative
+ * representations of one transfer. The caller must hand off only the delivery
+ * form selected by its server. This result is not written to the send journal.
  */
-struct SignMessageResult {
+struct PreparedTransfer {
     /**
      * The application operation identifier.
      */
     NonEmptyString operation_id;
     /**
-     * The complete relaxed internal message encoded as a validated BOC.
+     * Complete incoming external message for direct provider submission.
+     */
+    Boc external_boc;
+    /**
+     * Complete owner-signed internal message for a gas-paying relayer.
      */
     Boc internal_boc;
     /**
-     * The Unix expiration timestamp covered by the signature.
+     * Fresh wallet sequence number covered by both signed messages.
+     */
+    uint32_t seqno;
+    /**
+     * Unix expiration timestamp covered by both signed messages.
      */
     uint64_t valid_until;
-    /**
-     * The durable workflow phase after the message becomes available to the caller.
-     */
-    SendPhase phase;
 };
 
 
 /**
- * The result of an atomic journal compare-and-swap operation.
+ * Requests durable submission of an already signed external wallet message.
+ *
+ * `seqno` and `valid_until` must be the exact values covered by `signed_boc`.
+ * They let the engine reconcile an ambiguous submission without parsing a
+ * wallet-version-specific body.
  */
-struct JournalCompareExchangeResult {
+struct SendBocRequest {
     /**
-     * Whether the host stored the replacement.
+     * A unique idempotency identifier chosen by the application.
      */
-    bool applied;
+    NonEmptyString operation_id;
     /**
-     * The current record after the operation, if one exists.
+     * Allows this submission to replace an unresolved durable send after confirmation.
      */
-    std::optional<JournalRecord> current;
+    bool force;
+    /**
+     * The complete signed external-message BOC.
+     */
+    Boc signed_boc;
+    /**
+     * The wallet sequence number covered by the signed message.
+     */
+    uint32_t seqno;
+    /**
+     * The Unix expiration timestamp covered by the signed message.
+     */
+    uint64_t valid_until;
+};
+
+namespace uniffi {
+struct FfiConverterProtectedSecretHostError;
+} // namespace uniffi
+
+/**
+ * A protected-storage failure returned by [`crate::WalletPlatformHost`].
+ */
+struct ProtectedSecretHostError: std::runtime_error {
+    friend uniffi::FfiConverterProtectedSecretHostError;
+
+    ProtectedSecretHostError() : std::runtime_error("") {}
+    ProtectedSecretHostError(const std::string &what_arg) : std::runtime_error(what_arg) {}
+
+    virtual ~ProtectedSecretHostError() = default;
+
+    virtual void throw_underlying() {
+        throw *this;
+    }
+
+protected:
+    virtual int32_t get_variant_idx() const {
+        return 0;
+    };
+};
+/**
+ * Contains variants of ProtectedSecretHostError
+ */
+namespace protected_secret_host_error {
+
+/**
+ * Reports a classified host failure with a safe diagnostic message.
+ */
+struct Failed: ProtectedSecretHostError {
+    ProtectedSecretHostErrorKind kind;
+    std::string diagnostic;
+
+    Failed() : ProtectedSecretHostError("") {}
+    Failed(const std::string &what_arg) : ProtectedSecretHostError(what_arg) {}
+
+    void throw_underlying() override {
+        throw *this;
+    }
+
+protected:
+    int32_t get_variant_idx() const override {
+        return 1;
+    }
+};
+} // namespace protected_secret_host_error
+
+
+/**
+ * Chain evidence and retry guidance for a durable outgoing message.
+ */
+struct ResolutionInfo {
+    /**
+     * The confirmed transaction hash, when the message was executed.
+     */
+    std::optional<Base64Hash> transaction_hash;
+    /**
+     * The confirmed transaction logical time.
+     */
+    std::optional<UnsignedDecimalString> transaction_lt;
+    /**
+     * Why the message remains unresolved, when no terminal evidence exists.
+     */
+    std::optional<PendingReason> pending_reason;
+    /**
+     * Whether a new send with `force` can replace this unresolved signed send.
+     */
+    bool can_force_retry;
+    /**
+     * A UI polling hint. This is not a correctness deadline.
+     */
+    std::optional<uint64_t> retry_after_hint_ms;
 };
 
 namespace uniffi {
@@ -2867,6 +2916,70 @@ protected:
     }
 };
 } // namespace statusless_host_error
+
+
+/**
+ * Requests a ready-to-send TON encrypted-comment body.
+ *
+ * The engine uses the supplied recipient public key or loads it from chain
+ * state, then asks the platform host to authorize access to this wallet's
+ * protected mnemonic.
+ */
+struct CreateEncryptedCommentRequest {
+    /**
+     * Recipient wallet address. Must expose `get_public_key` when no key is supplied.
+     */
+    TonAddressString recipient;
+    /**
+     * UTF-8 comment to encrypt. Its encoded form must not exceed 960 bytes.
+     */
+    std::string comment;
+    /**
+     * Optional 32-byte Ed25519 public key used instead of an on-chain lookup.
+     *
+     * Used directly without deriving or checking the recipient address. The
+     * caller must supply the key used by the recipient for comment decryption.
+     */
+    std::optional<std::vector<uint8_t>> recipient_public_key = std::nullopt;
+};
+
+
+/**
+ * The result of an atomic journal compare-and-swap operation.
+ */
+struct JournalCompareExchangeResult {
+    /**
+     * Whether the host stored the replacement.
+     */
+    bool applied;
+    /**
+     * The current record after the operation, if one exists.
+     */
+    std::optional<JournalRecord> current;
+};
+
+
+/**
+ * Host-owned subset of the TypeScript protocol's `DeviceInfo`.
+ *
+ * Rust fills `maxProtocolVersion` and `features` from the methods the engine
+ * actually implements, so platform clients cannot advertise unsupported
+ * capabilities.
+ */
+struct TonConnectDevice {
+    /**
+     * Current wallet runtime platform.
+     */
+    TonConnectDevicePlatform platform;
+    /**
+     * Wallet registry identifier.
+     */
+    std::string app_name;
+    /**
+     * Wallet application version.
+     */
+    std::string app_version;
+};
 
 namespace uniffi {
 struct FfiConverterWalletLifecycleError;
@@ -3030,136 +3143,195 @@ protected:
 };
 } // namespace wallet_lifecycle_error
 
-namespace uniffi {
-struct FfiConverterNftTransferFunding;
-} // namespace uniffi
 
 /**
- * The TON amounts used to execute one NFT item transfer.
- *
- * Both values are deliberately explicit. The engine does not choose a gas
- * deposit or recipient notification amount on behalf of the application.
+ * A request to store secret bytes in platform protected storage.
  */
-struct NftTransferFunding {
-    friend uniffi::FfiConverterNftTransferFunding;
+struct ProtectedSecretStore {
     /**
-     * Attach an exact amount to the NFT item call and forward an exact amount
-     * with the ownership notification.
+     * The host storage key.
      */
-    struct kExact {
-        /**
-         * Value attached to the internal message sent to the NFT item contract.
-         */
-        UnsignedDecimalString attached_nanograms;
-        /**
-         * Value forwarded to the new owner in `ownership_assigned`.
-         */
-        UnsignedDecimalString forward_nanograms;
-    };
-    NftTransferFunding(kExact variant): variant(variant) {}
-
-    NftTransferFunding(const NftTransferFunding &other): variant(other.variant) {}
-    NftTransferFunding(NftTransferFunding &&other): variant(std::move(other.variant)) {}
-
-    NftTransferFunding &operator=(const NftTransferFunding &other) {
-        variant = other.variant;
-        return *this;
-    }
-
-    NftTransferFunding &operator=(NftTransferFunding &&other) {
-        variant = std::move(other.variant);
-        return *this;
-    }
-
+    ProtectedSecretRef secret_ref;
     /**
-     * Returns the variant of this enum
+     * The mnemonic bytes. The host must not log or persist them outside protected storage.
      */
-    const std::variant<kExact> &get_variant() const {
-        return variant;
-    }
-
-private:
-    std::variant<kExact> variant;
-
-    NftTransferFunding();
+    std::vector<uint8_t> bytes;
+    /**
+     * Whether later reads must require user presence or device authentication.
+     */
+    bool require_user_presence;
 };
 
 
 /**
- * One-shot data prepared for a Wallet rev00 signing-key rotation.
- *
- * This value does not mean that rotation succeeded on-chain. Before
- * submission, the host must store `replacement_recovery_phrase` in protected
- * storage. It must store `signed_boc` as a pending durable record. Words 13-24
- * are the new signing half. Until chain state resolves the request, the host
- * must block ordinary signing.
- *
- * The signed request also carries `encryptedOldPrivateKey`, computed over
- * 32-byte Ed25519 seeds as
- * `sha256(new_private_key ‖ "keyChangeSaltV1") XOR old_private_key`, where the
- * old key is the signing key being replaced. Only the new key opens it. The
- * contract publishes it in its key-changed log, so
- * [`crate::WalletClient::decrypt_comment`] can later recover the replaced key.
- * The engine adds it to `signed_boc`; the host handles nothing extra.
+ * The observable state of the send workflow.
  */
-struct PreparedKeyRotation {
+struct SendSnapshot {
     /**
-     * Full 24-word phrase that preserves the anchor and contains the new signing half.
+     * The active or last operation identifier, if a send started.
      */
-    RecoveryPhrase replacement_recovery_phrase;
+    std::optional<NonEmptyString> operation_id;
     /**
-     * New raw 32-byte Ed25519 signing public key stored by the contract on success.
+     * The current public phase.
      */
-    std::vector<uint8_t> new_public_key;
+    SendPhase phase;
     /**
-     * Complete external or relaxed internal signed message as a validated BOC.
-     *
-     * Its `ChangePublicKey` request holds two references: the new key's
-     * wallet-address proof signature and the encrypted old private key.
+     * A sanitized diagnostic for failed or unknown submission states.
      */
-    Boc signed_boc;
+    std::optional<std::string> error_message;
     /**
-     * External delivery form for the same replacement key, sequence and expiration.
+     * Resolution evidence or pending guidance for the durable outgoing message.
      */
-    Boc external_boc;
-    /**
-     * Internal alternative; submit only one of the two delivery forms.
-     */
-    Boc internal_boc;
-    /**
-     * Sequence number covered by the signed request.
-     */
-    uint32_t seqno;
-    /**
-     * Unix expiration timestamp covered by the signed request.
-     */
-    uint64_t valid_until;
-    /**
-     * Delivery channel encoded into the request opcode.
-     */
-    KeyRotationMessageKind message_kind;
+    std::optional<ResolutionInfo> resolution;
 };
 
 
 /**
- * Asks which public key a TON encrypted comment for a recipient would use.
- *
- * The fields mean the same as in [`CreateEncryptedCommentRequest`], so the
- * answer predicts whether that request can encrypt, without a comment and
- * without any protected-secret access.
+ * A resource phase and its optional failure details.
  */
-struct EncryptedCommentRecipientRequest {
+struct ResourceState {
     /**
-     * Recipient wallet address.
+     * The current resource phase.
+     */
+    ResourcePhase phase;
+    /**
+     * The last error. This value is present only for [`ResourcePhase::Failed`].
+     */
+    std::optional<DomainError> error;
+};
+
+
+/**
+ * Inputs of one derived `MTProto` TON Connect session.
+ */
+struct TonConnectDerivedSessionRequest {
+    /**
+     * Wallet whose current signing key derives the session key.
+     */
+    WalletDescriptor descriptor;
+    /**
+     * The dApp client id `A`: exactly 64 lowercase hex characters.
+     */
+    std::string dapp_client_id;
+    /**
+     * The raw per-session nonce issued by the server. It must not be empty.
+     */
+    std::vector<uint8_t> nonce;
+};
+
+
+/**
+ * Immutable choices for a TEP-62 NFT item transfer.
+ */
+struct NftTransferIntent {
+    /**
+     * NFT item contract that currently owns the transferable item state.
+     */
+    TonAddressString nft_address;
+    /**
+     * Account that becomes the new NFT owner.
      */
     TonAddressString recipient;
     /**
-     * Optional 32-byte Ed25519 public key used instead of an on-chain lookup.
-     *
-     * The host authenticates it as described by
-     * [`CreateEncryptedCommentRequest::recipient_public_key`].
+     * Explicit attached and forwarded TON values.
      */
-    std::optional<std::vector<uint8_t>> recipient_public_key = std::nullopt;
+    NftTransferFunding funding;
+    /**
+     * Payload forwarded to the new owner.
+     */
+    NftTransferPayload payload;
+    /**
+     * Wallet message expiration policy.
+     */
+    SendExpiration expiration;
+};
+
+
+/**
+ * A syntax-validated transfer invoice parsed from a `ton://transfer/` link.
+ *
+ * This value is not an executable send request. Network policy, expiration,
+ * asset resolution, bounce selection, emulation, and user approval remain the
+ * responsibility of the later admission and send stages.
+ */
+struct ParsedTonTransferLink {
+    /**
+     * The Gram recipient or the jetton owner's account address.
+     */
+    TonAddressString recipient;
+    /**
+     * The asset requested by the link.
+     */
+    TonTransferAsset asset;
+    /**
+     * The exact amount in the asset's elementary units, when supplied.
+     */
+    std::optional<UnsignedDecimalString> amount;
+    /**
+     * The optional decoded text or binary payload.
+     */
+    TonTransferPayload payload;
+    /**
+     * The requested Unix expiration, or the engine-default policy when absent.
+     */
+    SendExpiration expiration;
+};
+
+
+/**
+ * One outgoing internal TON message before wallet-contract serialization.
+ */
+struct SendMessage {
+    /**
+     * A friendly or raw TON destination address.
+     */
+    TonAddressString destination;
+    /**
+     * The exact-value or whole-balance transfer policy.
+     */
+    SendAmount amount;
+    /**
+     * The single body representation encoded into the message.
+     */
+    SendMessageBody body;
+    /**
+     * Whether a failed destination-contract call returns the remaining value.
+     *
+     * Ordinary account transfers normally keep this false. Contract calls,
+     * including NFT item transfers, must enable it.
+     */
+    bool bounce;
+    /**
+     * Optional destination-contract `StateInit` attached independently of the body.
+     */
+    std::optional<Boc> state_init;
+};
+
+
+/**
+ * A signed TON Connect `signData` request, ready for the success response.
+ */
+struct TonConnectSignedData {
+    /**
+     * The signed request.
+     */
+    TonConnectSignDataRequest request;
+    /**
+     * The domain bound into the signature.
+     */
+    std::string domain;
+    /**
+     * The Unix signing time in seconds bound into the signature.
+     */
+    uint64_t timestamp;
+    /**
+     * Exact 64-byte Ed25519 signature.
+     */
+    std::vector<uint8_t> signature;
+    /**
+     * The current 32-byte Ed25519 signing public key that made the signature.
+     */
+    std::vector<uint8_t> public_key;
 };
 
 
@@ -3187,20 +3359,47 @@ struct TonConnectSignDataSignRequest {
 
 
 /**
- * Result of creating a wallet.
- *
- * The descriptor is safe to persist. The recovery phrase is transient and
- * exists only so the UI can show it once.
+ * A bounded summary of the Toncenter trace emulated before authorization.
  */
-struct CreatedWallet {
+struct SendEmulation {
     /**
-     * Metadata that the application must persist.
+     * The masterchain block used as the emulation state snapshot.
      */
-    WalletDescriptor descriptor;
+    uint32_t mc_block_seqno;
     /**
-     * A transient phrase that the application can present once.
+     * Fees charged by the source wallet transaction, in nanograms.
      */
-    RecoveryPhrase recovery_phrase;
+    UnsignedDecimalString wallet_fees_nanograms;
+    /**
+     * Sum of fees across every transaction currently present in the trace.
+     */
+    UnsignedDecimalString trace_fees_nanograms;
+    /**
+     * Number of transactions currently present in the emulated trace.
+     */
+    uint64_t transaction_count;
+    /**
+     * High-level actions recognized by Toncenter in the emulated trace.
+     */
+    std::vector<SendEmulationAction> actions;
+    /**
+     * Per-account transaction outcomes observed before optional action parsing.
+     *
+     * This evidence lets typed contract flows validate execution even when a
+     * Toncenter deployment does not recognize the corresponding high-level action.
+     */
+    std::vector<SendEmulationTransaction> transactions;
+    /**
+     * Whether every returned transaction completed without an observed phase failure.
+     *
+     * A false value does not by itself block submission. A recipient can
+     * reject or bounce after the source wallet transaction succeeds.
+     */
+    bool trace_succeeded;
+    /**
+     * Whether Toncenter reports that the trace still has unresolved messages.
+     */
+    bool is_incomplete;
 };
 
 
@@ -3280,174 +3479,6 @@ struct NftItem {
 
 
 /**
- * A signed TON Connect `signData` request, ready for the success response.
- */
-struct TonConnectSignedData {
-    /**
-     * The signed request.
-     */
-    TonConnectSignDataRequest request;
-    /**
-     * The domain bound into the signature.
-     */
-    std::string domain;
-    /**
-     * The Unix signing time in seconds bound into the signature.
-     */
-    uint64_t timestamp;
-    /**
-     * Exact 64-byte Ed25519 signature.
-     */
-    std::vector<uint8_t> signature;
-    /**
-     * The current 32-byte Ed25519 signing public key that made the signature.
-     */
-    std::vector<uint8_t> public_key;
-};
-
-
-/**
- * One outgoing internal TON message before wallet-contract serialization.
- */
-struct SendMessage {
-    /**
-     * A friendly or raw TON destination address.
-     */
-    TonAddressString destination;
-    /**
-     * The exact-value or whole-balance transfer policy.
-     */
-    SendAmount amount;
-    /**
-     * The single body representation encoded into the message.
-     */
-    SendMessageBody body;
-    /**
-     * Whether a failed destination-contract call returns the remaining value.
-     *
-     * Ordinary account transfers normally keep this false. Contract calls,
-     * including NFT item transfers, must enable it.
-     */
-    bool bounce;
-    /**
-     * Optional destination-contract `StateInit` attached independently of the body.
-     */
-    std::optional<Boc> state_init;
-};
-
-
-/**
- * A resource phase and its optional failure details.
- */
-struct ResourceState {
-    /**
-     * The current resource phase.
-     */
-    ResourcePhase phase;
-    /**
-     * The last error. This value is present only for [`ResourcePhase::Failed`].
-     */
-    std::optional<DomainError> error;
-};
-
-
-/**
- * The observable state of the send workflow.
- */
-struct SendSnapshot {
-    /**
-     * The active or last operation identifier, if a send started.
-     */
-    std::optional<NonEmptyString> operation_id;
-    /**
-     * The current public phase.
-     */
-    SendPhase phase;
-    /**
-     * A sanitized diagnostic for failed or unknown submission states.
-     */
-    std::optional<std::string> error_message;
-    /**
-     * Resolution evidence or pending guidance for the durable outgoing message.
-     */
-    std::optional<ResolutionInfo> resolution;
-};
-
-
-/**
- * A syntax-validated transfer invoice parsed from a `ton://transfer/` link.
- *
- * This value is not an executable send request. Network policy, expiration,
- * asset resolution, bounce selection, emulation, and user approval remain the
- * responsibility of the later admission and send stages.
- */
-struct ParsedTonTransferLink {
-    /**
-     * The Gram recipient or the jetton owner's account address.
-     */
-    TonAddressString recipient;
-    /**
-     * The asset requested by the link.
-     */
-    TonTransferAsset asset;
-    /**
-     * The exact amount in the asset's elementary units, when supplied.
-     */
-    std::optional<UnsignedDecimalString> amount;
-    /**
-     * The optional decoded text or binary payload.
-     */
-    TonTransferPayload payload;
-    /**
-     * The requested Unix expiration, or the engine-default policy when absent.
-     */
-    SendExpiration expiration;
-};
-
-
-/**
- * Inputs of one derived `MTProto` TON Connect session.
- */
-struct TonConnectDerivedSessionRequest {
-    /**
-     * Wallet whose current signing key derives the session key.
-     */
-    WalletDescriptor descriptor;
-    /**
-     * The dApp client id `A`: exactly 64 lowercase hex characters.
-     */
-    std::string dapp_client_id;
-    /**
-     * The raw per-session nonce issued by the server. It must not be empty.
-     */
-    std::vector<uint8_t> nonce;
-};
-
-
-/**
- * Requests an address-bound off-chain TON Connect ownership proof signature.
- */
-struct TonConnectProofSignRequest {
-    /**
-     * Wallet whose protected key must sign the proof.
-     */
-    WalletDescriptor descriptor;
-    /**
-     * Exact manifest domain shown to and approved by the user.
-     */
-    std::string domain;
-    /**
-     * Unix signing timestamp in seconds.
-     */
-    uint64_t timestamp;
-    /**
-     * Exact dApp challenge from the `ton_proof` connect item.
-     */
-    std::string payload;
-};
-
-
-/**
  * Identifies one wallet client and its provider configuration.
  */
 struct WalletClientConfig {
@@ -3503,74 +3534,43 @@ struct WalletClientConfig {
 
 
 /**
- * A bounded summary of the Toncenter trace emulated before authorization.
+ * Result of creating a wallet.
+ *
+ * The descriptor is safe to persist. The recovery phrase is transient and
+ * exists only so the UI can show it once.
  */
-struct SendEmulation {
+struct CreatedWallet {
     /**
-     * The masterchain block used as the emulation state snapshot.
+     * Metadata that the application must persist.
      */
-    uint32_t mc_block_seqno;
+    WalletDescriptor descriptor;
     /**
-     * Fees charged by the source wallet transaction, in nanograms.
+     * A transient phrase that the application can present once.
      */
-    UnsignedDecimalString wallet_fees_nanograms;
-    /**
-     * Sum of fees across every transaction currently present in the trace.
-     */
-    UnsignedDecimalString trace_fees_nanograms;
-    /**
-     * Number of transactions currently present in the emulated trace.
-     */
-    uint64_t transaction_count;
-    /**
-     * High-level actions recognized by Toncenter in the emulated trace.
-     */
-    std::vector<SendEmulationAction> actions;
-    /**
-     * Per-account transaction outcomes observed before optional action parsing.
-     *
-     * This evidence lets typed contract flows validate execution even when a
-     * Toncenter deployment does not recognize the corresponding high-level action.
-     */
-    std::vector<SendEmulationTransaction> transactions;
-    /**
-     * Whether every returned transaction completed without an observed phase failure.
-     *
-     * A false value does not by itself block submission. A recipient can
-     * reject or bounce after the source wallet transaction succeeds.
-     */
-    bool trace_succeeded;
-    /**
-     * Whether Toncenter reports that the trace still has unresolved messages.
-     */
-    bool is_incomplete;
+    RecoveryPhrase recovery_phrase;
 };
 
 
 /**
- * Immutable choices for a TEP-62 NFT item transfer.
+ * Requests an address-bound off-chain TON Connect ownership proof signature.
  */
-struct NftTransferIntent {
+struct TonConnectProofSignRequest {
     /**
-     * NFT item contract that currently owns the transferable item state.
+     * Wallet whose protected key must sign the proof.
      */
-    TonAddressString nft_address;
+    WalletDescriptor descriptor;
     /**
-     * Account that becomes the new NFT owner.
+     * Exact manifest domain shown to and approved by the user.
      */
-    TonAddressString recipient;
+    std::string domain;
     /**
-     * Explicit attached and forwarded TON values.
+     * Unix signing timestamp in seconds.
      */
-    NftTransferFunding funding;
+    uint64_t timestamp;
     /**
-     * Payload forwarded to the new owner.
+     * Exact dApp challenge from the `ton_proof` connect item.
      */
-    NftTransferPayload payload;
-    /**
-     * Wallet message expiration policy.
-     */
-    SendExpiration expiration;
+    std::string payload;
 };
 
 
@@ -3593,88 +3593,6 @@ struct NftTransferPreviewRequest {
 
 
 /**
- * The complete transfer intent shared by preview and signed-send operations.
- *
- * Applications can preview this value and then pass the same value to a
- * signed send after the user confirms it.
- */
-struct SendIntent {
-    /**
-     * The expiration policy for the wallet message.
-     */
-    SendExpiration expiration;
-    /**
-     * The non-empty ordered outgoing internal-message batch.
-     *
-     * Wallet V5 accepts at most 255 actions. The engine validates that limit
-     * before emulation or secret authorization.
-     */
-    std::vector<SendMessage> messages;
-};
-
-
-/**
- * A validated internal-message signing preview without submission fee claims.
- */
-struct SignMessagePreview {
-    /**
-     * The complete ordered outgoing message batch covered by the future signature.
-     */
-    std::vector<SendMessage> messages;
-    /**
-     * The resolved Unix expiration timestamp that the signer will preserve.
-     */
-    uint64_t valid_until;
-    /**
-     * Whether fresh account state requires the relayed message to carry wallet `StateInit`.
-     */
-    bool needs_state_init;
-};
-
-
-/**
- * Paginated wallet activity and its independent load states.
- */
-struct ActivityList {
-    /**
-     * Activity in descending logical-time order with duplicate items removed.
-     */
-    std::vector<ActivityItem> items;
-    /**
-     * The load state for the first activity page.
-     */
-    ResourceState resource;
-    /**
-     * The load state for an additional activity page.
-     */
-    ResourceState pagination_resource;
-    /**
-     * Whether the provider can have another activity page.
-     */
-    bool has_more;
-};
-
-
-/**
- * Requests one owner-signed TEP-62 NFT transfer.
- */
-struct NftTransferRequest {
-    /**
-     * Unique idempotency identifier chosen by the application.
-     */
-    NonEmptyString operation_id;
-    /**
-     * Allows replacement of an unresolved durable send after explicit confirmation.
-     */
-    bool force;
-    /**
-     * Immutable NFT transfer choices.
-     */
-    NftTransferIntent intent;
-};
-
-
-/**
  * Requests signed NFT transfer delivery forms without submitting either one.
  */
 struct PrepareNftTransferRequest {
@@ -3686,29 +3604,6 @@ struct PrepareNftTransferRequest {
      * Immutable NFT transfer choices.
      */
     NftTransferIntent intent;
-};
-
-
-/**
- * Paginated NFT items owned by the wallet and their independent load states.
- */
-struct NftList {
-    /**
-     * NFT items in descending last-transaction order.
-     */
-    std::vector<NftItem> items;
-    /**
-     * The load state for the first NFT page.
-     */
-    ResourceState resource;
-    /**
-     * The load state for an additional NFT page.
-     */
-    ResourceState pagination_resource;
-    /**
-     * Whether the provider can have another NFT page.
-     */
-    bool has_more;
 };
 
 
@@ -3746,6 +3641,155 @@ struct SendPreview {
 
 
 /**
+ * The complete transfer intent shared by preview and signed-send operations.
+ *
+ * Applications can preview this value and then pass the same value to a
+ * signed send after the user confirms it.
+ */
+struct SendIntent {
+    /**
+     * The expiration policy for the wallet message.
+     */
+    SendExpiration expiration;
+    /**
+     * The non-empty ordered outgoing internal-message batch.
+     *
+     * Wallet V5 accepts at most 255 actions. The engine validates that limit
+     * before emulation or secret authorization.
+     */
+    std::vector<SendMessage> messages;
+};
+
+
+/**
+ * Paginated wallet activity and its independent load states.
+ */
+struct ActivityList {
+    /**
+     * Activity in descending logical-time order with duplicate items removed.
+     */
+    std::vector<ActivityItem> items;
+    /**
+     * The load state for the first activity page.
+     */
+    ResourceState resource;
+    /**
+     * The load state for an additional activity page.
+     */
+    ResourceState pagination_resource;
+    /**
+     * Whether the provider can have another activity page.
+     */
+    bool has_more;
+};
+
+
+/**
+ * Paginated NFT items owned by the wallet and their independent load states.
+ */
+struct NftList {
+    /**
+     * NFT items in descending last-transaction order.
+     */
+    std::vector<NftItem> items;
+    /**
+     * The load state for the first NFT page.
+     */
+    ResourceState resource;
+    /**
+     * The load state for an additional NFT page.
+     */
+    ResourceState pagination_resource;
+    /**
+     * Whether the provider can have another NFT page.
+     */
+    bool has_more;
+};
+
+
+/**
+ * Requests one owner-signed TEP-62 NFT transfer.
+ */
+struct NftTransferRequest {
+    /**
+     * Unique idempotency identifier chosen by the application.
+     */
+    NonEmptyString operation_id;
+    /**
+     * Allows replacement of an unresolved durable send after explicit confirmation.
+     */
+    bool force;
+    /**
+     * Immutable NFT transfer choices.
+     */
+    NftTransferIntent intent;
+};
+
+
+/**
+ * A validated internal-message signing preview without submission fee claims.
+ */
+struct SignMessagePreview {
+    /**
+     * The complete ordered outgoing message batch covered by the future signature.
+     */
+    std::vector<SendMessage> messages;
+    /**
+     * The resolved Unix expiration timestamp that the signer will preserve.
+     */
+    uint64_t valid_until;
+    /**
+     * Whether fresh account state requires the relayed message to carry wallet `StateInit`.
+     */
+    bool needs_state_init;
+};
+
+
+/**
+ * Requests an owner-signed Wallet V5 message for delivery by a relayer.
+ */
+struct SignMessageRequest {
+    /**
+     * A unique idempotency identifier chosen by the application.
+     */
+    NonEmptyString operation_id;
+    /**
+     * Allows this request to replace an earlier signed message whose outcome is unresolved.
+     *
+     * The earlier message remains valid until its expiration time and can win
+     * the sequence-number race. Require explicit user confirmation before use.
+     */
+    bool force;
+    /**
+     * The immutable messages and expiration boundary covered by the signature.
+     */
+    SendIntent intent;
+};
+
+
+/**
+ * Requests one signed wallet transfer.
+ */
+struct SendRequest {
+    /**
+     * A unique idempotency identifier chosen by the application.
+     */
+    NonEmptyString operation_id;
+    /**
+     * Allows this send to replace an earlier signed send whose on-chain outcome is unresolved.
+     *
+     * The earlier send can still execute. Require explicit user confirmation
+     * before setting this flag because both transfers can affect the balance.
+     */
+    bool force;
+    /**
+     * The immutable message and expiration choices for this operation.
+     */
+    SendIntent intent;
+};
+
+
+/**
  * Requests both signed delivery forms for one wallet transfer.
  *
  * The engine resolves one fresh wallet sequence number and one expiration
@@ -3759,20 +3803,6 @@ struct PrepareTransferRequest {
     NonEmptyString operation_id;
     /**
      * The immutable messages and expiration policy covered by both signatures.
-     */
-    SendIntent intent;
-};
-
-
-/**
- * Public transfer intent used to preview a send without unlocking its secret.
- *
- * A preview uses fresh account state and a fake signature. It does not reserve
- * an operation identifier, read the send journal, or request the mnemonic.
- */
-struct SendPreviewRequest {
-    /**
-     * The same immutable intent accepted by the signed-send operation.
      */
     SendIntent intent;
 };
@@ -3829,69 +3859,16 @@ struct WalletSnapshot {
 
 
 /**
- * Requests an owner-signed Wallet V5 message for delivery by a relayer.
+ * Public transfer intent used to preview a send without unlocking its secret.
+ *
+ * A preview uses fresh account state and a fake signature. It does not reserve
+ * an operation identifier, read the send journal, or request the mnemonic.
  */
-struct SignMessageRequest {
+struct SendPreviewRequest {
     /**
-     * A unique idempotency identifier chosen by the application.
-     */
-    NonEmptyString operation_id;
-    /**
-     * Allows this request to replace an earlier signed message whose outcome is unresolved.
-     *
-     * The earlier message remains valid until its expiration time and can win
-     * the sequence-number race. Require explicit user confirmation before use.
-     */
-    bool force;
-    /**
-     * The immutable messages and expiration boundary covered by the signature.
+     * The same immutable intent accepted by the signed-send operation.
      */
     SendIntent intent;
-};
-
-
-/**
- * Requests one signed wallet transfer.
- */
-struct SendRequest {
-    /**
-     * A unique idempotency identifier chosen by the application.
-     */
-    NonEmptyString operation_id;
-    /**
-     * Allows this send to replace an earlier signed send whose on-chain outcome is unresolved.
-     *
-     * The earlier send can still execute. Require explicit user confirmation
-     * before setting this flag because both transfers can affect the balance.
-     */
-    bool force;
-    /**
-     * The immutable message and expiration choices for this operation.
-     */
-    SendIntent intent;
-};
-
-
-/**
- * The result of a refresh or pagination operation and its resulting snapshot.
- */
-struct WalletUpdate {
-    /**
-     * The terminal operation outcome.
-     */
-    WalletOperationOutcome outcome;
-    /**
-     * The number of new unique activity items added by pagination.
-     */
-    uint64_t activity_items_added;
-    /**
-     * The number of new unique NFT items added by pagination.
-     */
-    uint64_t nft_items_added;
-    /**
-     * The immutable snapshot after the operation.
-     */
-    WalletSnapshot snapshot;
 };
 
 namespace uniffi {
@@ -4018,6 +3995,29 @@ private:
     std::variant<kSendTransaction, kSignMessage, kDisconnect, kUnsupported, kSignData> variant;
 
     TonConnectIncomingRequest();
+};
+
+
+/**
+ * The result of a refresh or pagination operation and its resulting snapshot.
+ */
+struct WalletUpdate {
+    /**
+     * The terminal operation outcome.
+     */
+    WalletOperationOutcome outcome;
+    /**
+     * The number of new unique activity items added by pagination.
+     */
+    uint64_t activity_items_added;
+    /**
+     * The number of new unique NFT items added by pagination.
+     */
+    uint64_t nft_items_added;
+    /**
+     * The immutable snapshot after the operation.
+     */
+    WalletSnapshot snapshot;
 };
 
 
